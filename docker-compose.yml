@@ -1,0 +1,64 @@
+services:
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: jupyter
+      args:
+        REQUIREMENTS_FILE: ${REQUIREMENTS_FILE:-requirements.txt}
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+        UV_VERSION: ${UV_VERSION:-0.5.11}
+        PIP_AUDIT_STRICT: ${PIP_AUDIT_STRICT:-0}
+    ports:
+      # 1:1 host↔container mapping so the URL JupyterLab prints in its log
+      # matches the one the user actually opens. Both sides use HOST_PORT.
+      # Default bind is loopback-only. Override BIND_ADDR=0.0.0.0 to expose
+      # on all interfaces — only do this on a trusted network behind a real
+      # auth proxy. JupyterLab on a public bind = arbitrary code execution.
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8888}:${HOST_PORT:-8888}"
+    volumes:
+      - ${MOUNT_PATH:-./workspace}:/home/workspace
+    environment:
+      # When set, the entrypoint switches JupyterLab to hashed-password auth
+      # and disables the auto-token. Required when BIND_ADDR is not 127.0.0.1.
+      # Generate: python -c "from jupyter_server.auth import passwd; print(passwd())"
+      JUPYTER_PASSWORD_HASH: ${JUPYTER_PASSWORD_HASH:-}
+      # Port JupyterLab binds inside the container. Mirrors HOST_PORT so the
+      # log banner shows the same port the user opens on the host.
+      JUPYTER_PORT: ${HOST_PORT:-8888}
+    # Default /dev/shm of 64 MB is too small for PyTorch DataLoader workers
+    # at scale; bump to a sensible default that user can override.
+    shm_size: ${SHM_SIZE:-2gb}
+    deploy:
+      resources:
+        limits:
+          memory: ${MEMORY_LIMIT:-16G}
+          cpus: "${CPU_LIMIT:-8}"
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Root filesystem is read-only; the bind-mounted workspace is the only
+    # persistent writable surface. JupyterLab runtime state goes to tmpfs
+    # so a code-execution bug inside the container cannot drop a payload
+    # onto the image rootfs.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/jovyan/.jupyter
+      - /home/jovyan/.local
+      - /home/jovyan/.cache
+      - /home/jovyan/.ipython
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

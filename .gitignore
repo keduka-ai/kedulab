@@ -1,0 +1,36 @@
+# Secret-bearing env files — only env.example (no leading dot) is tracked.
+.env
+.env.*
+!env.example
+
+# Credentials / keys
+*.pem
+*.key
+*.crt
+secrets/
+
+# Shell installers that historically lived in the repo root
+Miniconda3-*.sh
+*-installer.sh
+
+# IDE / editor state
+.idea/
+.vscode/
+
+# Python bytecode / test cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# uv lockfile cache scratch
+.uv-cache/
+
+# Local Claude state
+.claude/
+.docs/
+CLAUDE.md
+
+# install.sh smoke-test scratch
+.smoketest/

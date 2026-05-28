@@ -1,0 +1,96 @@
+accelerate>=1.13,<2.0
+aiopath>=0.7,<0.8
+beautifulsoup4>=4.14,<5.0
+bleach[css]>=6.3,<7.0
+tinycss2>=1.4,<2.0
+black>=26.3,<27.0
+boto3>=1.42,<2.0
+cachetools>=7.0,<8.0
+channels>=4.3,<5.0
+channels-redis>=4.3,<5.0
+click>=8.3,<9.0
+crispy-tailwind>=1.0,<2.0
+# Pinned explicitly to override transitive resolution to vulnerable versions.
+# CVE-2026-34073 + CVE-2026-26007 are fixed in 46.0.6 / 46.0.5 respectively.
+cryptography>=46.0.6,<47.0
+daphne>=4.2,<5.0
+debugpy>=1.8,<2.0
+dill>=0.4,<0.5
+dj-database-url>=3.1,<4.0
+Django>=6.0,<7.0
+django-allauth[socialaccount]>=65.15,<66.0
+django-axes>=8.0,<9.0
+django-countries>=8.2,<9.0
+django-crispy-forms>=2.6,<3.0
+django-csp>=4.0,<5.0
+django-debug-toolbar>=6.3,<7.0
+django-filter>=25.2,<26.0
+django-prometheus>=2.4,<3.0
+django-ratelimit>=4.1,<5.0
+django-storages[s3]>=1.14,<2.0
+django-tailwind[reload]>=4.4,<5.0
+djangorestframework>=3.17,<4.0
+djangorestframework-simplejwt>=5.5,<6.0
+djangorestframework-xml>=2.0,<3.0
+djoser>=2.3,<3.0
+docling-core>=2.73,<3.0
+drf-yasg>=1.21,<2.0
+faiss-cpu>=1.13,<2.0
+fido2>=2.0,<3.0
+flake8>=7.3,<8.0
+gradio>=6.12,<7.0
+gunicorn>=25.3,<26.0
+huggingface_hub>=1.10,<2.0
+# jupyterlab + ipykernel intentionally absent — see jupyter-base.txt, which
+# Dockerfile.jupyter always installs alongside this file.
+langchain-core>=1.4,<2.0
+latex2mathml>=3.80,<4.0
+# llama-cpp-python removed to eliminate the transitive diskcache
+# CVE-2025-69872 (no upstream fix). The `local` LLM backend raises a
+# descriptive RuntimeError when enabled without the package installed.
+locust>=2.43,<3.0
+lxml>=6.0,<7.0
+markdown>=3.10,<4.0
+matplotlib>=3.10,<4.0
+numpy>=2.4,<3.0
+opencv-python-headless>=4.13,<5.0
+openai>=2.31,<3.0
+packaging>=26.0,<27.0
+pandas>=3.0,<4.0
+pdf2image>=1.17,<2.0
+Pillow>=12.2,<13.0
+plotly>=6.7,<7.0
+polars>=1.39,<2.0
+prometheus-client>=0.25,<0.26
+psutil>=7.2,<8.0
+psycopg2-binary>=2.9,<3.0
+# Pinned explicitly to override transitive resolution to vulnerable versions.
+# CVE-2026-27459 + CVE-2026-27448 are fixed in 26.0.0.
+pyOpenSSL>=26.0,<27.0
+pydub>=0.25,<0.26
+Pygments>=2.20,<3.0
+pymdown-extensions>=10.21,<11.0
+pypdf>=6.10,<7.0
+pip-audit>=2.7,<3.0
+pytest>=9.0,<10.0
+pytest-asyncio>=1.3,<2.0
+pytest-django>=4.12,<5.0
+python-decouple>=3.8,<4.0
+python-dotenv>=1.2,<2.0
+# §5.2 S MEDIUM — magic-byte sniff for thumbnail and avatar uploads.
+# Requires the `libmagic1` apt package at runtime (already installed in
+# the Dockerfile). Imported by kais/utilities/image_validation.py.
+python-magic>=0.4,<1.0
+PyYAML>=6.0,<7.0
+qrcode>=8.0,<9.0
+ray[data,train,tune,serve]>=2.54,<3.0
+redis>=7.4,<8.0
+requests>=2.33,<3.0
+safety>=3.7,<4.0
+stripe>=15.0,<16.0
+torch>=2.11,<3.0
+torchvision>=0.26,<0.27
+tqdm>=4.67,<5.0
+transformers>=5.5,<6.0
+twisted[http2,tls]>=25.5,<26.0
+whitenoise>=6.12,<7.0

@@ -1,0 +1,8 @@
+# jupyterlab floor 4.4.8 closes CVE-2025-59842 (LaTeX-link reverse
+# tabnabbing — missing noopener/noreferrer; fixed 4.4.8). Floor raised
+# to 4.5 to keep parity with what requirements-kais.txt previously asked
+# for before its jupyterlab pin was deduplicated here.
+jupyterlab>=4.5,<5.0
+# ipykernel 7.x is the current line; requirements-kais.txt previously
+# carried >=7.2 so we raise the shared floor to match.
+ipykernel>=7.2,<8.0

@@ -1,0 +1,186 @@
+# --- Cloud / Storage ----------------------------------------------------------
+azure-storage-blob>=12.24,<13.0
+azure-mgmt-storage>=21.2,<22.0
+boto3>=1.42,<2.0
+
+# --- Deep Learning core -------------------------------------------------------
+# User intent: pin to TF 2.18.x specifically (2.15 and 2.20 commented out
+# upstream — likely CUDA/cuDNN compat with the cuda:12.4.1-cudnn base image).
+# This intentionally narrows R3's "next major" rule (<3.0) to "next minor"
+# (<2.19) to honor that intent. Loosen to <3.0 if the base image bumps.
+tensorflow>=2.18,<2.19
+tensorflow-datasets>=4.9,<5.0
+keras>=3.7,<4.0
+ml-dtypes>=0.4,<0.5
+# PyTorch GPU. Pinned to 2.5–2.6.x because those wheels bundle CUDA 12.4
+# (nvidia-cuda-runtime-cu12==12.4.127, nvidia-cudnn-cu12==9.1.0.70) — exact
+# match for the cuda:12.4.1-cudnn-runtime base image. torch 2.7+ moved to
+# CUDA 12.8 wheels and would need a base-image bump. Co-install with TF +
+# JAX is a known fragile combination; if a CUDA-init conflict surfaces at
+# runtime, split torch into its own per-project image.
+torch>=2.5,<2.7
+# JAX with CUDA 12 plugin. Held on the 0.4.x line because 0.5+ requires
+# ml_dtypes>=0.5, which conflicts with TF 2.18's ml-dtypes<0.5 ceiling.
+# 0.4.38 declares ml_dtypes>=0.4, numpy>=1.26 — overlaps with TF window.
+# Bump in lockstep with the TF / ml-dtypes pins, not independently.
+jax[cuda12]>=0.4.38,<0.5
+# Floor at 5.0 closes CVE-2026-1839 (RCE via malicious checkpoint —
+# _load_rng_state called torch.load without weights_only=True; only fixed
+# on the 5.x line). 5.x changes the Keras backend interface — validate any
+# TFAutoModel imports against TF 2.18.
+transformers>=5.0,<6.0
+datasets>=3.1,<4.0
+
+# --- Numeric / Scientific -----------------------------------------------------
+# numpy capped at <2.1 and ml-dtypes capped at <0.5 — TF 2.18.1 wheels
+# declare numpy>=1.26,<2.1 and ml-dtypes>=0.4,<0.5 in their own metadata.
+# Anything outside those windows is an unsatisfiable resolver conflict
+# (verified 2026-05-28 via `uv pip compile`). Loosen both ceilings when
+# the TF pin moves past 2.18.
+numpy>=1.26,<2.1
+pandas>=2.2,<3.0
+scipy>=1.14,<2.0
+scikit-learn>=1.6,<2.0
+scikit-image>=0.25,<1.0
+shapely>=2.0,<3.0
+albumentations>=1.4,<2.0
+# imgaug removed 2026-05-27: abandoned in 2020, albumentations is the
+# de-facto successor and is already pinned above.
+imageio>=2.37,<3.0
+opencv-python>=4.11,<5.0
+# Pillow is transitive via opencv/scikit-image/imageio; pin explicitly to
+# block historic image-parser CVEs. Floor at 12.2 covers CVE-2025-48379
+# (DDS heap overflow), CVE-2026-25990 (PSD OOB write), CVE-2026-40192
+# (FITS DoS) — all fixed in the 12.x line.
+pillow>=12.2,<13.0
+
+# --- Visualisation ------------------------------------------------------------
+matplotlib>=3.10,<4.0
+# plotly held <6.0 — plotly 6 brought breaking changes to the Figure
+# rendering pipeline. Bump after the notebook set is verified against 6.x.
+plotly>=5.24,<6.0
+seaborn>=0.13,<1.0
+
+# --- LLM / RAG / agent stacks -------------------------------------------------
+# The CVE-2025-68664 (LangGrinch, CVSS 9.3) fix lives in langchain-core 1.x
+# (allowed_objects allowlist around dumps()/dumpd() — pre-fix, an attacker
+# could inject serialized objects, exfiltrate env-var secrets, and reach RCE
+# via Jinja2 templates). The core pin below is what closes the CVE.
+#
+# langchain (the umbrella) moved to a stable 1.x line; pin matches.
+# langchain-community never released a stable 1.x — latest is 0.4.x and the
+# package is officially being sunset by the maintainers (per PyPI warning,
+# verified 2026-05-28). Stay on 0.4.x until migration off langchain-community
+# is planned. Note: langchain-community 0.4.2 itself requires
+# langchain-core>=1.4, so the CVE floor is reinforced transitively.
+langchain>=1.0,<2.0
+langchain-community>=0.4,<1.0
+langchain-core>=1.4,<2.0
+# Gradio bumped to 6.x — 5.x caps pillow<12 which conflicts with the
+# pillow>=12.2 CVE floor. 6.x brought breaking component/event API changes;
+# any notebook calling gr.* needs a quick re-test against the 6.12+ surface.
+# Matches the gradio>=6.12,<7.0 pin already in requirements-kais.txt.
+gradio>=6.12,<7.0
+bertviz>=1.4,<2.0
+
+# --- Document / OCR / PDF -----------------------------------------------------
+# pyPdf2 (PyPDF2) was abandoned in 2022 and has unfixed CVEs
+# (CVE-2023-36810 class). Replaced with the maintained successor `pypdf`.
+# pypdf 6.x is API-compatible with 5.x for the PdfReader/PdfWriter surface.
+pypdf>=6.0,<7.0
+pdfplumber>=0.11,<1.0
+pdf2image>=1.17,<2.0
+pytesseract>=0.3.13,<1.0
+unstructured.pytesseract>=0.3.13,<1.0
+
+# --- Audio / Video ------------------------------------------------------------
+soundfile>=0.13,<1.0
+pyaudio>=0.2.14,<1.0
+yt-dlp>=2026.1,<2027.0
+
+# --- NLP utilities ------------------------------------------------------------
+nltk>=3.9,<4.0
+num2words>=0.5,<1.0
+
+# --- Web / API (Django stack) -------------------------------------------------
+# Django 5.2 is the current LTS line; Django 6 is a major API break — hold
+# this default image at <6.0 until consumers are migrated.
+Django>=5.2,<6.0
+djangorestframework>=3.16,<4.0
+djangorestframework-simplejwt>=5.5,<6.0
+djangorestframework-xml>=2.0,<3.0
+django-allauth>=65.15,<66.0
+django-axes>=8.0,<9.0
+django-countries>=7.6,<8.0
+django-crispy-forms>=2.6,<3.0
+crispy-tailwind>=1.0,<2.0
+django-debug-toolbar>=5.0,<7.0
+django-filter>=25.2,<26.0
+django-prometheus>=2.4,<3.0
+djoser>=2.3,<3.0
+drf-yasg>=1.21,<2.0
+dj-database-url>=3.0,<4.0
+gunicorn>=23.0,<26.0
+daphne>=4.2,<5.0
+channels>=4.3,<5.0
+psycopg2-binary>=2.9,<3.0
+
+# --- Testing / dev tooling ----------------------------------------------------
+pytest>=8.3,<10.0
+pytest-django>=4.12,<5.0
+debugpy>=1.8,<2.0
+flake8>=7.3,<8.0
+black[jupyter]>=26.0,<27.0
+# selenium + webdriver-manager removed 2026-05-27: no Chrome/Firefox is
+# installed at apt level so the stack is unusable as-is. Reinstate
+# alongside an apt 'chromium-driver' install if a real consumer surfaces.
+nbdime>=4.0,<5.0
+
+# --- Security-sensitive utility libs ------------------------------------------
+# bleach < 6.2 had XSS bypasses; pin floor at the patched line.
+bleach>=6.3,<7.0
+# CVE-2024-35195 (Session.verify), CVE-2024-47081 (.netrc credential leak)
+# fixed in 2.32+; latest 2.33.x.
+requests>=2.33,<3.0
+# Floor at 46.0.7 closes CVE-2026-26007 (ECC subgroup attack leaks private
+# keys via load_pem_public_key(); fixed 46.0.5) and CVE-2026-39892
+# (Hash.update() buffer overflow on non-contiguous Python buffers; fixed
+# 46.0.7).
+cryptography>=46.0.7,<47.0
+oauthlib>=3.2,<4.0
+
+# --- Web parsing / serialization ----------------------------------------------
+beautifulsoup4>=4.14,<5.0
+pyyaml>=6.0,<7.0
+Markdown>=3.10,<4.0
+pymdown-extensions>=10.21,<11.0
+latex2mathml>=3.80,<4.0
+pygments>=2.20,<3.0
+
+# --- Async / control flow -----------------------------------------------------
+nest-asyncio>=1.6,<2.0
+tenacity>=9.0,<10.0
+click>=8.3,<9.0
+blinker>=1.9,<2.0
+distro>=1.9,<2.0
+termcolor>=2.5,<3.0
+
+# --- Build / native ------------------------------------------------------------
+cython>=3.0,<4.0
+# libclang removed 2026-05-27: legacy TF 2.15 transitive; not imported by
+# anything in the current pin set.
+munkres>=1.1,<2.0
+
+# --- Distributed / orchestration ----------------------------------------------
+# Moved out 2026-05-27 to requirements-distributed.txt — ~1 GB of deps
+# (ray, kubernetes, kfp) that only matter for multi-node training. Build
+# the distributed image with:
+#   REQUIREMENTS_FILE=requirements-distributed.txt docker compose -p dist up -d --build
+
+# --- Observability / logging --------------------------------------------------
+python-logging-loki>=0.3,<1.0
+nvitop>=1.4,<2.0
+
+# --- Misc utilities -----------------------------------------------------------
+natsort>=8.4,<9.0
+# virtualenv removed 2026-05-27: redundant inside a uv-managed venv.

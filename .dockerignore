@@ -1,0 +1,42 @@
+# VCS
+.git
+.gitignore
+.gitmodules
+.gitconfig
+
+# IDE / editor state
+.idea
+.vscode
+.ripgreprc
+
+# Claude / agent state
+.claude
+.mcp.json
+
+# Reports, docs, scratch
+.docs
+README.md
+CLAUDE.md
+
+# Workspace bind-mount target — never bake notebook data into the image
+workspace/
+
+# Local env files
+.env
+.env.*
+!env.example
+
+# Shell installers / dotfiles that shouldn't leak
+*.sh
+.bash_profile
+.bashrc
+.profile
+.zprofile
+.zshrc
+
+# Build artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
