@@ -21,10 +21,10 @@ CLAUDE.md
 # Workspace bind-mount target — never bake notebook data into the image
 workspace/
 
-# Local env files
-.env
-.env.*
-!env.example
+# Local env files (recursive — also catches .smoketest/*/.env)
+**/.env
+**/.env.*
+!**/.env.example
 
 # Shell installers / dotfiles that shouldn't leak
 *.sh
@@ -40,3 +40,35 @@ __pycache__
 *.pyo
 *.egg-info
 .pytest_cache
+
+# Not needed in the image (build copies only requirements*.txt, jupyter-base.txt, scripts/entrypoint.sh)
+assets/
+.smoketest/
+LICENSE
+CHANGELOG.md
+RELEASE_NOTES.md
+*.md
+
+# Host-side venv — can be GBs, must never enter context
+.venv/
+venv/
+
+# Tooling caches / OS cruft
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+
+# ML / data artifacts — keep build context small
+*.h5
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.gguf
+*.pkl
+*.npy
+*.npz

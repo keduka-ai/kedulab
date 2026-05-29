@@ -1,3 +1,4 @@
+# Env files (never commit secrets); template is tracked
 .env
 .env.*
 !.env.example
@@ -15,6 +16,11 @@ Miniconda3-*.sh
 # IDE / editor state
 .idea/
 .vscode/
+*.swp
+
+# OS cruft
+.DS_Store
+Thumbs.db
 
 # Python bytecode / test cache
 __pycache__/
@@ -23,8 +29,62 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
+# Host-side virtualenvs (the container venv lives at /opt/venv, not in-repo)
+.venv/
+venv/
+
+# Linter / type-checker / coverage caches
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ML model / weight artifacts
+*.h5
+*.hdf5
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.gguf
+*.pkl
+*.joblib
+*.npy
+*.npz
+
+# Datasets / downloaded corpora caches
+.cache/
+nltk_data/
+
+# Training / experiment logs
+*.log
+logs/
+runs/
+*.tfevents.*
+wandb/
+mlruns/
+lightning_logs/
+
+# Python packaging output
+build/
+dist/
+*.whl
+
 # uv lockfile cache scratch
 .uv-cache/
+
+# Jupyter runtime artifacts
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+.jupyter/
+
+# Workspace bind-mount target — user notebooks/data, never commit
+workspace/*
+!workspace/.gitkeep
+
+# Trash dirs created by file managers / Jupyter delete
+.Trash-*/
 
 # Local Claude state
 .claude/
