@@ -5,7 +5,7 @@
 <h1 align="center">Kedulab</h1>
 
 <p align="center">
-  <em>GPU-accelerated JupyterLab containers for the Keduka AI School research stack — one image per project, side-by-side, reproducible.</em>
+  <em>GPU-accelerated JupyterLab containers — one image per project, side-by-side, reproducible. Adaptable to any project.</em>
 </p>
 
 <p align="center">
@@ -18,13 +18,13 @@
 
 ---
 
-## About Keduka
+## About Kedulab
 
-This repository is part of **[Keduka AI School (KAIS)](https://keduka.com)**, an AI-powered learning platform by **Keduka Cognitive Services (KCS)**. KAIS pairs every learner with adaptive AI teachers across data science, machine learning, NLP, computer vision, federated learning, physics, and mathematics.
+**Kedulab** is a general-purpose Docker Compose setup for GPU-accelerated JupyterLab containers, each with its own pinned dependency set and its own host-mounted workspace. Built on `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04`, with [`uv`](https://docs.astral.sh/uv/) managing both Python (3.12 by default) and packages.
 
-**Kedulab** is the container infrastructure that powers the notebooks behind the KAIS curriculum and internal research: a Docker Compose setup for GPU-accelerated JupyterLab containers, each with its own pinned dependency set and its own host-mounted workspace. Built on `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04`, with [`uv`](https://docs.astral.sh/uv/) managing both Python (3.12 by default) and packages.
+It is not tied to any one curriculum or organization — change a few env vars and you have a new stack for whatever you're working on. Spin up one notebook for one project. Spin up another for a different project, with completely different dependencies, side-by-side.
 
-Spin up one notebook for one project. Spin up another for a different project, with completely different dependencies, side-by-side. Change a few env vars and you have a new stack.
+Kedulab is maintained by **Keduka Cognitive Services (KCS)** and powers the notebooks behind **[Keduka AI School (KAIS)](https://keduka.com)** — an AI-powered learning platform pairing every learner with adaptive AI teachers across data science, machine learning, NLP, computer vision, federated learning, physics, and mathematics. KAIS is one consumer of Kedulab; the project itself is built to be adopted by anyone who needs reproducible, GPU-backed JupyterLab environments.
 
 ---
 
