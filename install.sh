@@ -3,8 +3,8 @@
 # Kedulab installer — bootstrap a GPU JupyterLab stack on this host.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/keduka/kedulab/main/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/keduka/kedulab/main/install.sh | bash -s -- --help
+#   curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash -s -- --help
 #
 # Flags:
 #   --ref <git-ref>        Branch or tag to clone (default: main)
@@ -14,7 +14,7 @@
 #   --help, -h             Show this help
 #
 # Non-interactive env-var overrides (skip the matching prompt):
-#   KEDULAB_PROJECT, KEDULAB_REQUIREMENTS_FILE, KEDULAB_MOUNT_PATH, KEDULAB_HOST_PORT
+#   KEDULAB_REPO_URL, KEDULAB_PROJECT, KEDULAB_REQUIREMENTS_FILE, KEDULAB_MOUNT_PATH, KEDULAB_HOST_PORT
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
     exit 1
 fi
 
-REPO_URL="${KEDULAB_REPO_URL:-https://github.com/keduka/kedulab.git}"
+REPO_URL="${KEDULAB_REPO_URL:-https://github.com/keduka-ai/kedulab.git}"
 NVIDIA_DOCS_URL="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
 GPU_PROBE_IMAGE="nvidia/cuda:12.4.1-base-ubuntu22.04"
 
@@ -50,20 +50,60 @@ on_error() {
 trap 'on_error $LINENO' ERR
 
 usage() {
-    sed -n '3,16p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'
     cat <<'EOF'
+Kedulab installer — bootstrap a GPU JupyterLab stack on this host.
+
+Usage:
+  curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash -s -- --help
+
+Flags:
+  --ref <git-ref>        Branch or tag to clone (default: main)
+  --dir <path>           Where to clone (default: ./kedulab)
+  --no-prereq-check      Skip Docker / Compose / NVIDIA Toolkit checks
+  --yes, -y              Accept defaults non-interactively
+  --help, -h             Show this help
+
+Non-interactive env-var overrides:
+  KEDULAB_REPO_URL
+      Git repository to clone.
+      Default: https://github.com/keduka-ai/kedulab.git
+
+  KEDULAB_PROJECT
+      Compose project name written to .env.
+
+  KEDULAB_REQUIREMENTS_FILE
+      Requirements file baked into the image.
+      Default: requirements.txt
+
+  KEDULAB_MOUNT_PATH
+      Host path mounted at /home/workspace.
+      Default: ./workspace
+
+  KEDULAB_HOST_PORT
+      Host port mapped to JupyterLab.
+      Default: 8888
 
 Examples:
   # Default: clone main into ./kedulab, prompt for stack config
-  curl -fsSL https://raw.githubusercontent.com/keduka/kedulab/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash
+
+  # Show help from the streamed installer
+  curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash -s -- --help
 
   # Pin to a tag, custom directory
-  curl -fsSL https://raw.githubusercontent.com/keduka/kedulab/main/install.sh \
+  curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh \
     | bash -s -- --ref v1.0.0 --dir ~/projects/kedulab
 
   # CI / scripted use — accept all defaults, skip prereq checks
   KEDULAB_PROJECT=nlp KEDULAB_HOST_PORT=5679 \
-    curl -fsSL https://.../install.sh | bash -s -- --yes --no-prereq-check
+    curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh \
+      | bash -s -- --yes --no-prereq-check
+
+  # Use a fork or alternate remote
+  KEDULAB_REPO_URL=https://github.com/your-org/kedulab.git \
+    curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh \
+      | bash -s -- --yes
 EOF
 }
 
