@@ -1,7 +1,6 @@
-# Secret-bearing env files — only env.example (no leading dot) is tracked.
 .env
 .env.*
-!env.example
+!.env.example
 
 # Credentials / keys
 *.pem
@@ -34,3 +33,5 @@ CLAUDE.md
 
 # install.sh smoke-test scratch
 .smoketest/
+CHANGELOG.md
+RELEASE_NOTES.md
