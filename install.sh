@@ -132,13 +132,13 @@ check_prereqs() {
         exit 1
     fi
 
-    if ! docker version >/dev/null 2>&1; then
+    if ! docker version >/dev/null 2>&1 </dev/null; then
         err "docker is installed but 'docker version' failed."
         err "is the daemon running? are you in the 'docker' group? (try: sudo usermod -aG docker \$USER && newgrp docker)"
         exit 1
     fi
 
-    if ! docker compose version >/dev/null 2>&1; then
+    if ! docker compose version >/dev/null 2>&1 </dev/null; then
         err "Compose v2 plugin not found. This installer requires 'docker compose' (not 'docker-compose' v1)."
         err "see: https://docs.docker.com/compose/install/linux/"
         exit 1
@@ -146,7 +146,7 @@ check_prereqs() {
 
     info "GPU smoke test: docker run --rm --gpus all $GPU_PROBE_IMAGE nvidia-smi"
     info "  (pulls a ~70 MB image; skip with --no-prereq-check)"
-    if ! docker run --rm --gpus all "$GPU_PROBE_IMAGE" nvidia-smi >/dev/null 2>&1; then
+    if ! docker run --rm --gpus all "$GPU_PROBE_IMAGE" nvidia-smi >/dev/null 2>&1 </dev/null; then
         err "GPU smoke test failed. NVIDIA Container Toolkit not installed or not configured for Docker."
         err "install guide: $NVIDIA_DOCS_URL"
         exit 1
@@ -165,20 +165,24 @@ clone_repo() {
         exit 1
     fi
     info "cloning $REPO_URL@$REF into $DIR"
-    git clone --depth 1 --branch "$REF" "$REPO_URL" "$DIR"
+    GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch "$REF" "$REPO_URL" "$DIR" </dev/null
 }
 
-# Open the controlling terminal for interactive prompts. When invoked via
-# `curl ... | bash`, stdin is the script body — reading from it would consume
-# script bytes. /dev/tty is the user's keyboard regardless of stdin redirection.
 TTY_AVAILABLE=0
 open_tty() {
     if [ "$ASSUME_YES" -eq 1 ]; then return; fi
-    if [ -r /dev/tty ] && exec </dev/tty 2>/dev/null; then
+    if [ -r /dev/tty ] && exec 3</dev/tty 2>/dev/null; then
         TTY_AVAILABLE=1
     else
         warn "no terminal available for prompts — accepting defaults (equivalent to --yes)"
         ASSUME_YES=1
+    fi
+}
+
+release_tty() {
+    if [ "$TTY_AVAILABLE" -eq 1 ]; then
+        exec 3<&-
+        TTY_AVAILABLE=0
     fi
 }
 
@@ -193,7 +197,7 @@ prompt() {
         answer="$default"
     else
         printf '%s[?]%s %s [%s]: ' "$C_BLUE" "$C_RESET" "$question" "$default"
-        IFS= read -r answer || answer=""
+        IFS= read -r answer <&3 || answer=""
         [ -z "$answer" ] && answer="$default"
     fi
     printf -v "$var" '%s' "$answer"
@@ -211,7 +215,7 @@ confirm_overwrite_env() {
     fi
     printf '%s[?]%s %s/.env already exists. Overwrite? [y/N]: ' "$C_BLUE" "$C_RESET" "$DIR"
     local answer=""
-    IFS= read -r answer || answer=""
+    IFS= read -r answer <&3 || answer=""
     case "$answer" in
         y|Y|yes|YES) return 0 ;;
         *)           warn "keeping existing $DIR/.env"; return 1 ;;
@@ -249,6 +253,7 @@ EOF
     info "For remote access, see README § Security posture."
 
     PROJECT_OUT="$project"
+    release_tty
 }
 
 print_next_steps() {
@@ -281,3 +286,5 @@ main() {
 }
 
 main "$@"
+
+exit 0
