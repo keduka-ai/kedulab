@@ -13,8 +13,13 @@
 #   --yes                  Accept defaults non-interactively
 #   --help, -h             Show this help
 #
+# GPU vs CPU: by default the installer probes for an NVIDIA GPU. If none is
+# usable it informs you and defaults to CPU (pins COMPOSE_FILE=docker-compose.cpu.yml
+# in .env). Force the mode with KEDULAB_GPU=on|off (default: auto).
+#
 # Non-interactive env-var overrides (skip the matching prompt):
-#   KEDULAB_REPO_URL, KEDULAB_PROJECT, KEDULAB_REQUIREMENTS_FILE, KEDULAB_MOUNT_PATH, KEDULAB_HOST_PORT
+#   KEDULAB_REPO_URL, KEDULAB_PROJECT, KEDULAB_REQUIREMENTS_FILE, KEDULAB_MOUNT_PATH,
+#   KEDULAB_HOST_PORT, KEDULAB_GPU
 
 set -euo pipefail
 
@@ -84,6 +89,12 @@ Non-interactive env-var overrides:
       Host port mapped to JupyterLab.
       Default: 8888
 
+  KEDULAB_GPU
+      GPU mode: auto (probe), on (force GPU), off (force CPU).
+      When no GPU is found, the installer defaults to CPU and pins
+      COMPOSE_FILE=docker-compose.cpu.yml in .env.
+      Default: auto
+
 Examples:
   # Default: clone main into ./kedulab, prompt for stack config
   curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash
@@ -144,15 +155,44 @@ check_prereqs() {
         exit 1
     fi
 
-    info "GPU smoke test: docker run --rm --gpus all $GPU_PROBE_IMAGE nvidia-smi"
-    info "  (pulls a ~70 MB image; skip with --no-prereq-check)"
-    if ! docker run --rm --gpus all "$GPU_PROBE_IMAGE" nvidia-smi >/dev/null 2>&1 </dev/null; then
-        err "GPU smoke test failed. NVIDIA Container Toolkit not installed or not configured for Docker."
-        err "install guide: $NVIDIA_DOCS_URL"
-        exit 1
+    ok "prerequisites OK"
+}
+
+# GPU_MODE is "gpu" or "cpu", resolved by detect_gpu(). A missing GPU is NOT a
+# hard failure: the same CUDA image runs on CPU (TensorFlow / PyTorch / JAX fall
+# back to CPU), so we inform the user and default to CPU rather than aborting.
+GPU_MODE=""
+detect_gpu() {
+    local pref="${KEDULAB_GPU:-auto}"
+    case "$pref" in
+        on|1|true|yes|y)
+            GPU_MODE="gpu"; info "GPU mode forced on (KEDULAB_GPU=$pref)"; return ;;
+        off|0|false|no|n)
+            GPU_MODE="cpu"; warn "GPU mode forced off (KEDULAB_GPU=$pref) — defaulting to CPU"; return ;;
+        auto) ;;
+        *)  warn "unrecognized KEDULAB_GPU=$pref — treating as 'auto'" ;;
+    esac
+
+    if [ "$PREREQ_CHECK" -eq 0 ]; then
+        GPU_MODE="gpu"
+        warn "--no-prereq-check: skipping GPU probe; assuming GPU."
+        warn "for CPU, re-run with KEDULAB_GPU=off or set COMPOSE_FILE=docker-compose.cpu.yml in .env."
+        return
     fi
 
-    ok "prerequisites OK"
+    info "GPU smoke test: docker run --rm --gpus all $GPU_PROBE_IMAGE nvidia-smi"
+    info "  (pulls a ~70 MB image; skip with --no-prereq-check)"
+    if docker run --rm --gpus all "$GPU_PROBE_IMAGE" nvidia-smi >/dev/null 2>&1 </dev/null; then
+        GPU_MODE="gpu"
+        ok "GPU detected — the stack will use it."
+    else
+        GPU_MODE="cpu"
+        warn "no usable GPU detected (NVIDIA Container Toolkit missing or not configured for Docker)."
+        warn "install guide: $NVIDIA_DOCS_URL"
+        info "defaulting to CPU: the same image runs without a GPU and TensorFlow / PyTorch / JAX"
+        info "fall back to CPU automatically (slower, but fully functional)."
+        info "to switch to GPU later, install the toolkit and remove the COMPOSE_FILE line from .env."
+    fi
 }
 
 clone_repo() {
@@ -243,6 +283,14 @@ REQUIREMENTS_FILE=$requirements_file
 MOUNT_PATH=$mount_path
 HOST_PORT=$host_port
 EOF
+        if [ "$GPU_MODE" = "cpu" ]; then
+            cat >> "$DIR/.env" <<'EOF'
+# No usable GPU detected at install time — select the CPU-only compose file.
+# Remove this line (or set it to docker-compose.yml) once an NVIDIA GPU +
+# Container Toolkit are available to switch the stack back to GPU.
+COMPOSE_FILE=docker-compose.cpu.yml
+EOF
+        fi
         ok "wrote $DIR/.env"
     fi
 
@@ -257,10 +305,16 @@ EOF
 }
 
 print_next_steps() {
+    local mode_note=""
+    if [ "$GPU_MODE" = "cpu" ]; then
+        mode_note="${C_YELLOW}[kedulab] CPU mode:${C_RESET} no GPU detected, so .env pins COMPOSE_FILE=docker-compose.cpu.yml.
+The stack runs on CPU. Install the NVIDIA Container Toolkit and drop that line to enable GPU.
+"
+    fi
     cat <<EOF
 
 ${C_GREEN}[kedulab] install complete.${C_RESET}
-
+$mode_note
 Next steps:
 
   cd $DIR
@@ -280,6 +334,7 @@ main() {
     else
         warn "--no-prereq-check: skipping Docker / Compose / NVIDIA Toolkit checks"
     fi
+    detect_gpu
     clone_repo
     configure_stack
     print_next_steps

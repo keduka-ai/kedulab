@@ -31,7 +31,7 @@ Kedulab is maintained by **Keduka Cognitive Services (KCS)** and powers the note
 ## Prerequisites
 
 - **Docker Engine 24+** with Compose v2 (`docker compose`, not `docker-compose`).
-- **NVIDIA GPU + driver** on the host.
+- **NVIDIA GPU + driver** on the host — *recommended* for real ML throughput, but **not required** (see CPU fallback below).
 - **[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)** so containers can see the GPU. Verify with:
 
   ```bash
@@ -40,7 +40,15 @@ Kedulab is maintained by **Keduka Cognitive Services (KCS)** and powers the note
 
   If that prints a GPU table, you're good.
 
-CPU-only use is not supported by this image (the `tensorflow[and-cuda]` wheel still imports but won't find a GPU; JAX likewise).
+### CPU fallback
+
+No GPU? The stack still runs. The same CUDA-based image works on a CPU-only host — TensorFlow, PyTorch, and JAX simply fall back to CPU at runtime (slower, but fully functional). The installer probes for a GPU and, when it finds none, **informs you and defaults to CPU** by pinning `COMPOSE_FILE=docker-compose.cpu.yml` in `.env` (the CPU compose file is `docker-compose.yml` minus the GPU device reservation). To select it manually:
+
+```bash
+COMPOSE_FILE=docker-compose.cpu.yml docker compose -p <project> up -d --build
+```
+
+Force the installer's choice with `KEDULAB_GPU=on` or `KEDULAB_GPU=off` (default: `auto`). To switch a CPU stack back to GPU later, install the NVIDIA Container Toolkit and remove the `COMPOSE_FILE` line from `.env`.
 
 ---
 
@@ -52,7 +60,7 @@ CPU-only use is not supported by this image (the `tensorflow[and-cuda]` wheel st
 curl -fsSL https://raw.githubusercontent.com/keduka/kedulab/main/install.sh | bash
 ```
 
-The installer is a thin bash bootstrap — it verifies your host can run the stack (Docker, Compose v2, NVIDIA Container Toolkit), clones the repo, walks you through the per-stack env vars (project name, requirements file, mount path, host port — press enter for defaults), writes `.env`, and prints the exact `docker compose` command to start the container. It does **not** auto-launch — you run the final command yourself.
+The installer is a thin bash bootstrap — it verifies your host can run the stack (Docker, Compose v2), probes for a GPU (falling back to CPU and pinning `docker-compose.cpu.yml` if none is found), clones the repo, walks you through the per-stack env vars (project name, requirements file, mount path, host port — press enter for defaults), writes `.env`, and prints the exact `docker compose` command to start the container. It does **not** auto-launch — you run the final command yourself.
 
 Read it first if you'd like:
 
@@ -320,7 +328,7 @@ The entrypoint switches JupyterLab from auto-token to hashed-password auth when 
 ## Troubleshooting
 
 **`could not select device driver "" with capabilities: [[gpu]]`**
-NVIDIA Container Toolkit isn't installed or isn't configured for Docker. Run the `nvidia-smi` smoke-test in the Prerequisites section.
+You're using the GPU compose file on a host with no working GPU — the NVIDIA Container Toolkit isn't installed or isn't configured for Docker. Either run the `nvidia-smi` smoke-test in the Prerequisites section to fix the toolkit, or switch to the CPU file: set `COMPOSE_FILE=docker-compose.cpu.yml` in `.env` (the installer does this automatically when it detects no GPU).
 
 **Port already allocated**
 Another stack (or another process) is on that port. Pick a different `HOST_PORT`.
@@ -337,7 +345,7 @@ docker compose -p <project> up -d
 The base CUDA image is ~3 GB and TensorFlow is another ~1.5 GB. First build downloads all of it. Subsequent builds reuse a BuildKit cache mount for `~/.cache/uv`, so editing `requirements.txt` no longer redownloads every wheel — typical iterative rebuild is under a minute.
 
 **I want a CPU-only variant**
-Not supported out of the box. Strip the `deploy.resources.reservations.devices` block from `docker-compose.yml` and swap the base image to a non-CUDA one (e.g. `python:3.12-slim`). You'll also want to drop `tensorflow[and-cuda]` from requirements in favor of plain `tensorflow`. At that point you've forked the project; consider whether a separate compose file is cleaner.
+Use `docker-compose.cpu.yml` — it's `docker-compose.yml` minus the GPU device reservation, so the stack starts on a host with no GPU. Select it with `COMPOSE_FILE=docker-compose.cpu.yml docker compose -p <project> up -d --build` (the installer pins this in `.env` automatically when it finds no GPU). The same CUDA-based image is reused; TensorFlow / PyTorch / JAX fall back to CPU at runtime. If you want a *smaller* CPU image too, that's a bigger change — swap the base to a non-CUDA one (e.g. `python:3.12-slim`) and drop the CUDA wheel extras; at that point you've forked the project.
 
 **Jupyter token rotates every restart**
 Expected. JupyterLab generates a fresh token on each launch. Pull it from `docker compose -p <project> logs jupyter`. For a stable credential, set `JUPYTER_PASSWORD_HASH` in `.env.<project>` (see [Security posture](#security-posture)) — the entrypoint switches to hashed-password auth at runtime. Do **not** add `--ServerApp.token=<value>` by hand; use the entrypoint's password path instead.
