@@ -57,7 +57,7 @@ Force the installer's choice with `KEDULAB_GPU=on` or `KEDULAB_GPU=off` (default
 ### Recommended: one-liner installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/keduka/kedulab/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash
 ```
 
 The installer is a thin bash bootstrap — it verifies your host can run the stack (Docker, Compose v2), probes for a GPU (falling back to CPU and pinning `docker-compose.cpu.yml` if none is found), clones the repo, walks you through the per-stack env vars (project name, requirements file, mount path, host port — press enter for defaults), writes `.env`, and prints the exact `docker compose` command to start the container. It does **not** auto-launch — you run the final command yourself.
@@ -65,7 +65,7 @@ The installer is a thin bash bootstrap — it verifies your host can run the sta
 Read it first if you'd like:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/keduka/kedulab/main/install.sh | bash -s -- --help
+curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash -s -- --help
 ```
 
 Flags: `--ref <tag>` (pin to a version), `--dir <path>` (custom clone target), `--yes` (accept all defaults), `--no-prereq-check` (CI mode). Env-var overrides: `KEDULAB_PROJECT`, `KEDULAB_REQUIREMENTS_FILE`, `KEDULAB_MOUNT_PATH`, `KEDULAB_HOST_PORT`.
@@ -73,7 +73,7 @@ Flags: `--ref <tag>` (pin to a version), `--dir <path>` (custom clone target), `
 ### Manual install
 
 ```bash
-git clone https://github.com/keduka/kedulab.git
+git clone https://github.com/keduka-ai-ai/kedulab.git
 cd kedulab
 
 # Build and launch the default stack
