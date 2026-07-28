@@ -97,6 +97,13 @@ unstructured.pytesseract>=0.3.13,<1.0
 soundfile>=0.13,<1.0
 pyaudio>=0.2.14,<1.0
 yt-dlp>=2026.1,<2027.0
+# librosa pulls numba (and llvmlite) for its DSP kernels. Resolves clean
+# against the numpy>=1.26,<2.1 TF window — numba 0.66 declares numpy<2.2 —
+# so no ceiling change is needed here (verified 2026-07-27 via
+# `uv pip compile`). Decoding beyond WAV/FLAC goes through audioread ->
+# ffmpeg, already installed at apt level. Bump in step with numpy if the
+# TF pin moves.
+librosa>=0.11,<1.0
 
 # --- NLP utilities ------------------------------------------------------------
 nltk>=3.9,<4.0

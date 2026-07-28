@@ -6,3 +6,9 @@ jupyterlab>=4.5,<5.0
 # ipykernel 7.x is the current line; requirements-kais.txt previously
 # carried >=7.2 so we raise the shared floor to match.
 ipykernel>=7.2,<8.0
+# `uv venv` does not seed pip, so without this a notebook's `!pip install x`
+# fails with "pip: not found" and `%pip install x` fails with "No module
+# named pip". Deps are still baked in with uv at build time — pip is here
+# purely so the interactive, in-notebook install path works. It targets the
+# writable PIP_PREFIX the entrypoint sets up, not the read-only /opt/venv.
+pip>=26.1,<27.0

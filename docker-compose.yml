@@ -28,6 +28,12 @@ services:
       # Port JupyterLab binds inside the container. Mirrors HOST_PORT so the
       # log banner shows the same port the user opens on the host.
       JUPYTER_PORT: ${HOST_PORT:-8888}
+      # Writable prefix for libraries installed from inside a notebook
+      # (`!pip install <lib>`). Lives on the bind-mounted workspace because
+      # the rootfs is read_only, so installs survive a container restart and
+      # can be wiped from the host with `rm -rf`. Set to the empty string to
+      # disable in-notebook installs entirely.
+      KEDULAB_USER_PREFIX: ${KEDULAB_USER_PREFIX-/home/workspace/.kedulab-packages}
     # Default /dev/shm of 64 MB is too small for PyTorch DataLoader workers
     # at scale; bump to a sensible default that user can override.
     shm_size: ${SHM_SIZE:-2gb}

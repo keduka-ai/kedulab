@@ -136,6 +136,7 @@ All knobs have defaults, all are overridable per-stack.
 | `USER_UID` / `USER_GID` | `1000` / `1000` | UID/GID of the non-root `jovyan` user. Match to your host `id -u` / `id -g` so bind-mount files are owned correctly. |
 | `UV_VERSION` | `0.5.11` | Tag of `ghcr.io/astral-sh/uv` the build copies the uv binary from. Bump to upgrade uv. |
 | `JUPYTER_PASSWORD_HASH` | (empty) | When set, swaps auto-token auth for hashed-password auth at container start. **Required when `BIND_ADDR` is not `127.0.0.1`.** Generate: `python -c "from jupyter_server.auth import passwd; print(passwd())"`. |
+| `KEDULAB_USER_PREFIX` | `/home/workspace/.kedulab-packages` | Where libraries installed from inside a notebook (`!pip install <lib>`) are written. Lives on the mounted workspace so they survive a restart. Set to an empty string to disable in-notebook installs. See [Installing libraries from a notebook](#installing-libraries-from-a-notebook). |
 | `PIP_AUDIT_STRICT` | `0` | Build arg — set to `1` in CI to run `pip-audit --strict` after the deps install. Off by default so local rebuilds aren't blocked on a single transitive CVE. |
 
 There are two ways to override them.
@@ -217,6 +218,39 @@ docker ps                  # all running containers
 
 ---
 
+## Installing libraries from a notebook
+
+For a quick experiment you don't have to rebuild the image — install straight from a cell:
+
+```python
+!pip install librosa
+```
+
+or, preferred, the IPython magic that always targets the kernel's own interpreter:
+
+```python
+%pip install librosa
+```
+
+Then restart the kernel (**Kernel → Restart Kernel**) and import as usual.
+
+### Where it goes, and why
+
+The container's root filesystem is mounted read-only, so pip cannot write into the image's virtualenv at `/opt/venv`. Instead the entrypoint points pip at a writable prefix on your mounted workspace — `KEDULAB_USER_PREFIX`, by default `/home/workspace/.kedulab-packages` — and puts it on `PYTHONPATH`. That has some useful consequences:
+
+- **Installs survive a container restart**, because they live on the host side of the bind mount.
+- **You can wipe them from the host** — `rm -rf <MOUNT_PATH>/.kedulab-packages` resets the environment back to exactly what the image ships, without rebuilding.
+- **Existing pinned packages are left alone.** pip is run with `--prefix`, not `--target`, so it treats everything already in `/opt/venv` as satisfied and downloads only what's genuinely missing. Installing a package that depends on `numpy` will *not* pull a second copy of numpy over the pinned one.
+
+### Caveats
+
+- **Ad-hoc installs are not reproducible.** They're for experiments. Once a library earns its place, add it to the project's `requirements*.txt` (and `pyproject.toml`) and rebuild — that's what makes it part of the image. See [Adding a new project](#adding-a-new-project).
+- **You can still break the pinned stack on purpose.** The overlay is searched *before* `/opt/venv`, so an explicit `!pip install numpy==2.2` will shadow the pinned numpy and can break TensorFlow. If something starts failing to import after an install, delete the overlay directory and restart the container.
+- **`!uv pip install` will not work** — uv targets `/opt/venv` directly, which is read-only. Use `pip`.
+- **A rebuild does not clear the overlay** (it's on the host, not in the image). Delete the directory if you want a clean slate.
+
+---
+
 ## Working with a running stack
 
 ```bash
@@ -260,12 +294,13 @@ REQUIREMENTS_FILE=requirements.lock docker compose -p <project> up -d --build
 ├── Dockerfile                       # Multi-stage: uv-bin, base, shell, jupyter targets.
 ├── docker-compose.yml               # Single parameterized `jupyter` service.
 ├── env.example                      # Template for per-project .env files.
-├── jupyter-base.txt                 # Pinned jupyterlab + ipykernel. Always installed.
+├── jupyter-base.txt                 # Pinned jupyterlab + ipykernel + pip. Always installed.
 ├── requirements.txt                 # Default project ML deps. Copy & customize per project.
 ├── requirements-distributed.txt     # Ray / Kubernetes / KFP add-on for distributed work.
 ├── pyproject.toml                   # Scaffold mirror of requirements*.txt for host-side uv workflows.
-├── scripts/entrypoint.sh            # JupyterLab launcher — flips to password auth when set.
+├── scripts/entrypoint.sh            # JupyterLab launcher — password auth + in-notebook install prefix.
 ├── scripts/lock.sh                  # Generate uv-compiled lockfiles.
+├── tests/                           # Shell regression tests (no docker daemon required).
 └── README.md                        # This file.
 ```
 
@@ -282,20 +317,21 @@ The default `requirements.txt` covers the common ML/NLP surface:
 - Deep learning: `tensorflow` (2.18.x, against the base image's CUDA), `keras`, `transformers` (5.x), `datasets`, `tensorflow-datasets`
 - LLM / RAG: `langchain`, `langchain-core`, `langchain-community`, `gradio`, `bertviz`
 - Document / OCR: `pypdf`, `pdfplumber`, `pdf2image`, `pytesseract`, `unstructured.pytesseract`
-- Audio / video: `soundfile`, `pyaudio`, `yt-dlp`
+- Audio / video: `librosa`, `soundfile`, `pyaudio`, `yt-dlp`
 - NLP: `nltk`, `num2words`
 - Web (for prototype APIs): the Django + DRF stack
 - Cloud: `boto3`, `azure-storage-blob`, `azure-mgmt-storage`
 
-Plus, from `jupyter-base.txt`: `jupyterlab`, `ipykernel`.
+Plus, from `jupyter-base.txt`: `jupyterlab`, `ipykernel`, and `pip` (uv doesn't seed pip into the venv; it's included so [in-notebook installs](#installing-libraries-from-a-notebook) work).
 
 For multi-node training, `REQUIREMENTS_FILE=requirements-distributed.txt` adds `ray[data,train,tune,serve]`, `kubernetes`, and `kfp-*`.
 
 All pinned with `>=X.Y,<Z.0` to allow patch/minor updates while blocking breaking major bumps. A few intentional ceilings:
 
 - `tensorflow<2.19` (user intent — 2.20+ isn't tested against the base image)
-- `numpy<2.2` (TF 2.18's actual support window)
-- `Django<6.0`, `plotly<6.0`, `gradio<6.0`, `pandas<3.0` — held below their breaking major releases until consuming notebooks are verified against them
+- `numpy<2.1` and `ml-dtypes<0.5` (TF 2.18's actual support window — anything outside it is an unsatisfiable resolve)
+- `torch<2.7` and `jax<0.5` (the wheel lines that match the base image's CUDA 12.4 and TF's `ml-dtypes` ceiling)
+- `Django<6.0`, `plotly<6.0`, `pandas<3.0` — held below their breaking major releases until consuming notebooks are verified against them
 
 You can replace any of this in your per-project requirements files. The image is rebuilt from scratch per project (each `-p <name>` gets its own image tag), so there's no shared state to worry about.
 
@@ -333,6 +369,18 @@ You're using the GPU compose file on a host with no working GPU — the NVIDIA C
 **Port already allocated**
 Another stack (or another process) is on that port. Pick a different `HOST_PORT`.
 
+**`!pip install …` fails with `pip: not found`**
+You're on an image built before pip was added to `jupyter-base.txt`. Rebuild: `docker compose -p <project> up -d --build`. (The venv is created by uv, which doesn't seed pip, so older images genuinely have no `pip` binary.)
+
+**`!pip install …` fails with `Read-only file system` or a permission error**
+The rootfs is read-only by design, so pip has to write to the workspace overlay instead. If the entrypoint couldn't create it, the container log carries a `kedulab: could not prepare …` warning — that means the host directory behind `MOUNT_PATH` isn't writable by the container user. Set `USER_UID` / `USER_GID` to your host `id -u` / `id -g` and rebuild. See [Installing libraries from a notebook](#installing-libraries-from-a-notebook).
+
+**A library I installed from a notebook disappeared**
+Check that you're bringing the stack up with the same `MOUNT_PATH` — the overlay lives at `<MOUNT_PATH>/.kedulab-packages`, so pointing a stack at a different workspace gives it a different set of ad-hoc installs.
+
+**Something broke right after an in-notebook install**
+An install can shadow a pinned package (the overlay is searched before the image's venv). Reset it from the host: `rm -rf <MOUNT_PATH>/.kedulab-packages` then `docker compose -p <project> restart`.
+
 **My new requirements aren't showing up**
 Compose doesn't rebuild when build args change unless you tell it to. Run with `--build`. If that still doesn't pick up the change, force a clean rebuild:
 
@@ -351,7 +399,7 @@ Use `docker-compose.cpu.yml` — it's `docker-compose.yml` minus the GPU device 
 Expected. JupyterLab generates a fresh token on each launch. Pull it from `docker compose -p <project> logs jupyter`. For a stable credential, set `JUPYTER_PASSWORD_HASH` in `.env.<project>` (see [Security posture](#security-posture)) — the entrypoint switches to hashed-password auth at runtime. Do **not** add `--ServerApp.token=<value>` by hand; use the entrypoint's password path instead.
 
 **Container shows `(unhealthy)` in `docker ps`**
-The HEALTHCHECK polls `http://localhost:5678/api/status` every 30s. A cold TF import can take a minute, so the first 60s is the start-period and won't flag. If it stays unhealthy after that, check `docker compose -p <project> logs jupyter` — the kernel manager may have wedged.
+The HEALTHCHECK polls `http://localhost:${JUPYTER_PORT}/login` every 30s. A cold TF import can take a minute, so the first 60s is the start-period and won't flag. If it stays unhealthy after that, check `docker compose -p <project> logs jupyter` — the kernel manager may have wedged.
 
 ---
 
