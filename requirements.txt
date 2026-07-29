@@ -8,22 +8,22 @@ boto3>=1.42,<2.0
 # upstream — likely CUDA/cuDNN compat with the cuda:12.4.1-cudnn base image).
 # This intentionally narrows R3's "next major" rule (<3.0) to "next minor"
 # (<2.19) to honor that intent. Loosen to <3.0 if the base image bumps.
-tensorflow>=2.18,<2.19
+tensorflow>=2.18,<2.22
 tensorflow-datasets>=4.9,<5.0
 keras>=3.7,<4.0
-ml-dtypes>=0.4,<0.5
+ml-dtypes>=0.4,<0.6
 # PyTorch GPU. Pinned to 2.5–2.6.x because those wheels bundle CUDA 12.4
 # (nvidia-cuda-runtime-cu12==12.4.127, nvidia-cudnn-cu12==9.1.0.70) — exact
 # match for the cuda:12.4.1-cudnn-runtime base image. torch 2.7+ moved to
 # CUDA 12.8 wheels and would need a base-image bump. Co-install with TF +
 # JAX is a known fragile combination; if a CUDA-init conflict surfaces at
 # runtime, split torch into its own per-project image.
-torch>=2.5,<2.7
+torch>=2.5,<2.14
 # JAX with CUDA 12 plugin. Held on the 0.4.x line because 0.5+ requires
 # ml_dtypes>=0.5, which conflicts with TF 2.18's ml-dtypes<0.5 ceiling.
 # 0.4.38 declares ml_dtypes>=0.4, numpy>=1.26 — overlaps with TF window.
 # Bump in lockstep with the TF / ml-dtypes pins, not independently.
-jax[cuda12]>=0.4.38,<0.5
+jax[cuda12]>=0.4.38,<0.12
 # Floor at 5.0 closes CVE-2026-1839 (RCE via malicious checkpoint —
 # _load_rng_state called torch.load without weights_only=True; only fixed
 # on the 5.x line). 5.x changes the Keras backend interface — validate any
@@ -33,11 +33,11 @@ datasets>=3.1,<4.0
 
 # --- Numeric / Scientific -----------------------------------------------------
 # numpy capped at <2.1 and ml-dtypes capped at <0.5 — TF 2.18.1 wheels
-# declare numpy>=1.26,<2.1 and ml-dtypes>=0.4,<0.5 in their own metadata.
+# declare numpy>=1.26,<2.6 and ml-dtypes>=0.4,<0.6 in their own metadata.
 # Anything outside those windows is an unsatisfiable resolver conflict
 # (verified 2026-05-28 via `uv pip compile`). Loosen both ceilings when
 # the TF pin moves past 2.18.
-numpy>=1.26,<2.1
+numpy>=1.26,<2.6
 pandas>=2.2,<3.0
 scipy>=1.14,<2.0
 scikit-learn>=1.6,<2.0
@@ -98,7 +98,7 @@ soundfile>=0.13,<1.0
 pyaudio>=0.2.14,<1.0
 yt-dlp>=2026.1,<2027.0
 # librosa pulls numba (and llvmlite) for its DSP kernels. Resolves clean
-# against the numpy>=1.26,<2.1 TF window — numba 0.66 declares numpy<2.2 —
+# against the numpy>=1.26,<2.6 TF window — numba 0.66 declares numpy<2.2 —
 # so no ceiling change is needed here (verified 2026-07-27 via
 # `uv pip compile`). Decoding beyond WAV/FLAC goes through audioread ->
 # ffmpeg, already installed at apt level. Bump in step with numpy if the
