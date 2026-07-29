@@ -29,7 +29,7 @@ jax[cuda12]>=0.4.38,<0.5
 # on the 5.x line). 5.x changes the Keras backend interface — validate any
 # TFAutoModel imports against TF 2.18.
 transformers>=5.0,<6.0
-datasets>=3.1,<4.0
+datasets>=3.1,<6.0
 
 # --- Numeric / Scientific -----------------------------------------------------
 # numpy capped at <2.1 and ml-dtypes capped at <0.5 — TF 2.18.1 wheels

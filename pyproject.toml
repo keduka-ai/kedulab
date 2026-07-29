@@ -36,7 +36,7 @@ dependencies = [
     "keras>=3.7,<4.0",
     "ml-dtypes>=0.4,<0.5",
     "transformers>=5.0,<6.0",  # CVE-2026-1839
-    "datasets>=3.1,<4.0",
+    "datasets>=3.1,<6.0",
     # Numeric / Scientific (numpy <2.1 + ml-dtypes <0.5 are the TF 2.18.1 ceilings)
     "numpy>=1.26,<2.1",
     "pandas>=2.2,<3.0",
