@@ -1,0 +1,98 @@
+name: CI
+
+# Every test in tests/ is designed to run without a Docker daemon: the compose
+# tests use `docker compose config` (client-side only), the entrypoint tests use
+# stub binaries, and the installer tests mock docker and clone from a local bare
+# repo. So the whole suite runs on a stock runner in well under a minute.
+#
+# The one thing this workflow deliberately does NOT do is build the image —
+# the CUDA base plus TF + torch + JAX is well over 10 GB, which does not fit
+# reliably in a free runner's disk budget. That lives in security.yml, which
+# frees disk first and runs on a schedule.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show tool versions
+        run: |
+          docker compose version
+          git --version
+          python3 --version
+
+      - name: Run test suite
+        run: bash tests/run_all.sh
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      # install.sh is piped into bash from the internet by real users, and the
+      # entrypoint runs as PID 1 in every container — quoting bugs in either are
+      # expensive. SC1091 (can't follow non-constant source) is not useful here.
+      - name: Lint shell scripts
+        run: |
+          shellcheck --severity=warning --exclude=SC1091 \
+            install.sh \
+            scripts/*.sh \
+            tests/*.sh
+
+  hadolint:
+    name: Dockerfile lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          # DL3008: apt versions are not pinned — deliberate, the base image is
+          #         digest-pinnable instead (see scripts/pin-base.sh) and
+          #         pinning apt versions makes the image unbuildable the moment
+          #         Ubuntu rebuilds a package.
+          # DL3009: `rm -rf /var/lib/apt/lists` IS present, but hadolint misses
+          #         it through the cache mounts.
+          ignore: DL3008,DL3009
+          failure-threshold: warning
+
+  compose-lockstep:
+    name: GPU/CPU compose lockstep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Duplicated from compose_test.sh on purpose: this prints the actual diff
+      # in the job log, which is what you want when the lockstep breaks.
+      - name: Diff rendered configs
+        run: |
+          diff <(docker compose config) \
+               <(COMPOSE_FILE=docker-compose.cpu.yml docker compose config) \
+            > /tmp/compose.diff || true
+          echo "--- rendered config diff (expected: only the GPU reservation) ---"
+          cat /tmp/compose.diff
+          if grep -E '^[<>]' /tmp/compose.diff \
+             | grep -viE 'devices|driver|nvidia|capabilities|count|reservations|^[<>][[:space:]]*-?[[:space:]]*gpu' \
+             | grep -q .; then
+            echo "::error::docker-compose.cpu.yml drifted beyond the GPU reservation"
+            exit 1
+          fi

@@ -93,5 +93,10 @@ CLAUDE.md
 
 # install.sh smoke-test scratch
 .smoketest/
-CHANGELOG.md
-RELEASE_NOTES.md
+
+# NOT ignored, deliberately:
+#   CHANGELOG.md / RELEASE_NOTES.md — a published repo needs a changelog, and
+#     SECURITY.md points at the release notes for the install.sh checksum.
+#   requirements*.lock — lockfiles are the reproducible-build artifact and are
+#     meant to be committed alongside the .txt they were compiled from
+#     (scripts/lock.sh -a).

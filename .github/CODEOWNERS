@@ -1,0 +1,29 @@
+# Code owners are requested for review automatically on every PR.
+#
+# SETUP REQUIRED: replace @keduka-ai/maintainers with a real GitHub team or
+# user handle. GitHub silently ignores CODEOWNERS entries that name a team
+# which doesn't exist or lacks write access to the repo, so an unedited
+# placeholder means no reviews are ever requested.
+#
+# For the rule to have teeth, also enable branch protection on `main` with
+# "Require review from Code Owners".
+
+* @keduka-ai/maintainers
+
+# The security-sensitive surface. These files decide whether the container runs
+# as root, what it can reach, and what gets executed on a user's machine —
+# changes here deserve a deliberate look even when the diff is one line.
+/Dockerfile                @keduka-ai/maintainers
+/docker-compose.yml        @keduka-ai/maintainers
+/docker-compose.cpu.yml    @keduka-ai/maintainers
+/scripts/entrypoint.sh     @keduka-ai/maintainers
+/install.sh                @keduka-ai/maintainers
+/SECURITY.md               @keduka-ai/maintainers
+/.github/workflows/        @keduka-ai/maintainers
+
+# Dependency pins encode CVE floors and resolver ceilings — see
+# CLAUDE.md § Dependency edits before approving a bump.
+/requirements.txt          @keduka-ai/maintainers
+/requirements-*.txt        @keduka-ai/maintainers
+/jupyter-base.txt          @keduka-ai/maintainers
+/pyproject.toml            @keduka-ai/maintainers

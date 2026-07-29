@@ -29,6 +29,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 
 REPO_URL="${KEDULAB_REPO_URL:-https://github.com/keduka-ai/kedulab.git}"
+REPO_URL_RAW="https://raw.githubusercontent.com/keduka-ai/kedulab/main"
 NVIDIA_DOCS_URL="https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
 GPU_PROBE_IMAGE="nvidia/cuda:12.4.1-base-ubuntu22.04"
 
@@ -94,6 +95,24 @@ Non-interactive env-var overrides:
       When no GPU is found, the installer defaults to CPU and pins
       COMPOSE_FILE=docker-compose.cpu.yml in .env.
       Default: auto
+
+  KEDULAB_USER_UID / KEDULAB_USER_GID
+      UID/GID the container's non-root user is built with, written to .env.
+      Defaults to this host's `id -u` / `id -g` so files created in the
+      mounted workspace stay owned by you and the mount is writable from
+      inside the container. Falls back to 1000 when run as root.
+
+Verifying this installer:
+  Piping a script from a branch runs whatever is on that branch right now.
+  For a reviewable install, download it, check the hash, then run it:
+
+    curl -fsSLO https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh
+    sha256sum install.sh        # compare against the value in the release notes
+    less install.sh             # read it
+    bash install.sh --ref <tag>
+
+  Passing --ref <tag> pins an immutable release; --ref main (the default)
+  tracks a moving branch and will warn.
 
 Examples:
   # Default: clone main into ./kedulab, prompt for stack config
@@ -206,6 +225,22 @@ clone_repo() {
     fi
     info "cloning $REPO_URL@$REF into $DIR"
     GIT_TERMINAL_PROMPT=0 git clone --depth 1 --branch "$REF" "$REPO_URL" "$DIR" </dev/null
+    warn_if_mutable_ref
+}
+
+# A branch moves. Piping an installer straight from a branch means running
+# whatever happened to land on it since you last looked — the classic
+# `curl | bash` supply-chain exposure. Tags don't move, so pinning one makes the
+# install reproducible and reviewable. We only warn: forcing a tag would break
+# anyone tracking main deliberately.
+warn_if_mutable_ref() {
+    if git -C "$DIR" show-ref --verify --quiet "refs/tags/$REF" 2>/dev/null; then
+        return 0
+    fi
+    warn "installing from mutable ref '$REF' — a branch can change under you between installs."
+    warn "for a reproducible, reviewable install, pin a release tag instead: --ref <tag>"
+    warn "and verify the installer before running it:"
+    warn "  curl -fsSLO $REPO_URL_RAW/install.sh && sha256sum install.sh && bash install.sh"
 }
 
 TTY_AVAILABLE=0
@@ -276,12 +311,33 @@ configure_stack() {
     prompt mount_path        "Host mount path"           "./workspace"           KEDULAB_MOUNT_PATH
     prompt host_port         "Host port"                 "8888"                  KEDULAB_HOST_PORT
 
+    # The container runs as the non-root user `jovyan`, built at USER_UID /
+    # USER_GID (image default 1000:1000). Files written into the bind mount get
+    # that ownership, so if it doesn't match the host user the workspace is not
+    # writable from inside the container: notebook saves fail, and the
+    # entrypoint cannot create the pip-overlay or model-cache directories.
+    # We're already running as the host user, so just record the right values.
+    local user_uid user_gid
+    user_uid="${KEDULAB_USER_UID:-$(id -u)}"
+    user_gid="${KEDULAB_USER_GID:-$(id -g)}"
+    # Never bake root into the image: USER_UID=0 would undo the non-root
+    # posture the whole container security model rests on.
+    if [ "$user_uid" = "0" ]; then
+        warn "running as root — writing USER_UID/USER_GID=1000 instead of 0 so the container stays non-root."
+        warn "if your workspace is owned by a different user, set USER_UID/USER_GID in .env by hand."
+        user_uid=1000
+        user_gid=1000
+    fi
+    info "  USER_UID = $user_uid, USER_GID = $user_gid  (matched to this host so the mount stays writable)"
+
     if confirm_overwrite_env; then
         cat > "$DIR/.env" <<EOF
 COMPOSE_PROJECT_NAME=$project
 REQUIREMENTS_FILE=$requirements_file
 MOUNT_PATH=$mount_path
 HOST_PORT=$host_port
+USER_UID=$user_uid
+USER_GID=$user_gid
 EOF
         if [ "$GPU_MODE" = "cpu" ]; then
             cat >> "$DIR/.env" <<'EOF'

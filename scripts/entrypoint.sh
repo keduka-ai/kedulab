@@ -63,6 +63,68 @@ PY
   fi
 fi
 
+# --- Writable cache / dataset dirs for the ML frameworks ---------------------
+#
+# The rootfs is read_only and only a handful of dirs under /home/jovyan are
+# tmpfs, which splits the pinned dependency set into two failure modes:
+#
+#   Hard failure — these default to a $HOME path that is NOT tmpfs, so the
+#   first write hits the read-only rootfs:
+#     nltk.download(...)             -> ~/nltk_data
+#     keras.datasets.*.load_data()   -> ~/.keras
+#     tfds.load(...)                 -> ~/tensorflow_datasets
+#
+#   Silent RAM burn — these default under ~/.cache, which IS tmpfs. tmpfs is
+#   RAM, it counts against the container's memory limit, and it is discarded on
+#   every restart. Pulling a multi-GB checkpoint there is an OOM kill, not a
+#   cache:
+#     transformers / datasets        -> ~/.cache/huggingface
+#     torch.hub                      -> ~/.cache/torch
+#     matplotlib font cache          -> ~/.cache/matplotlib
+#
+# So point all of them at the bind-mounted workspace — the one persistent,
+# disk-backed, writable surface — under KEDULAB_CACHE_DIR. Downloads then
+# survive restarts and rebuilds, and can be wiped from the host with `rm -rf`.
+#
+# Same conventions as the pip overlay above: `-` not `:-` so an explicitly
+# empty value disables the redirection, and failure is never fatal.
+KEDULAB_CACHE_DIR="${KEDULAB_CACHE_DIR-/home/workspace/.kedulab-cache}"
+
+if [ -n "$KEDULAB_CACHE_DIR" ]; then
+  if mkdir -p "$KEDULAB_CACHE_DIR" 2>/dev/null; then
+    # VAR:subdirectory. Keep in sync with tests/cache_dirs_test.sh.
+    for _pair in \
+      HF_HOME:huggingface \
+      TORCH_HOME:torch \
+      NLTK_DATA:nltk_data \
+      KERAS_HOME:keras \
+      TFDS_DATA_DIR:tensorflow_datasets \
+      MPLCONFIGDIR:matplotlib \
+      XDG_CACHE_HOME:xdg
+    do
+      _var="${_pair%%:*}"
+      _sub="${_pair#*:}"
+      # An explicitly-set value wins: a user who points HF_HOME at a shared
+      # dataset volume must not have it silently rewritten.
+      eval "_cur=\${${_var}-}"
+      if [ -z "$_cur" ]; then
+        _dir="${KEDULAB_CACHE_DIR}/${_sub}"
+        if mkdir -p "$_dir" 2>/dev/null; then
+          eval "export ${_var}=\"\$_dir\""
+        fi
+      fi
+    done
+    unset _pair _var _sub _cur _dir
+  else
+    echo "kedulab: could not prepare ${KEDULAB_CACHE_DIR} — model/dataset" \
+         "downloads will fall back to the read-only rootfs (nltk, keras and" \
+         "tensorflow-datasets will fail) or to RAM-backed tmpfs (huggingface," \
+         "torch). Usual cause: the workspace mount is not writable by the" \
+         "container user — set USER_UID/USER_GID to your host 'id -u'/'id -g'" \
+         "and rebuild." >&2
+  fi
+fi
+
 set -- \
   --ip=0.0.0.0 \
   --port="${JUPYTER_PORT:-8888}" \

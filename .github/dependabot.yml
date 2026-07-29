@@ -1,0 +1,67 @@
+version: 2
+
+# Dependency curation is this project's core value — the pins in
+# requirements*.txt encode deliberate CVE floors and compatibility ceilings.
+# Dependabot is here to surface what those pins are missing, not to churn them.
+#
+# versioning-strategy: increase-if-necessary is the important setting. It only
+# raises a bound when the current range genuinely cannot satisfy a fix, so the
+# deliberate ceilings (tensorflow <2.19, numpy <2.1, plotly <6.0, Django <6.0,
+# pandas <3.0, langchain-community <1.0) survive untouched. Read the rationale
+# in CLAUDE.md § Dependency edits before merging anything that moves a ceiling.
+
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    versioning-strategy: increase-if-necessary
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    # One PR per concern instead of one per package. The ML frameworks share a
+    # CUDA/numpy/ml-dtypes window and must be reviewed as a set — see the
+    # lockstep notes on the tensorflow / jax / ml-dtypes pins.
+    groups:
+      ml-frameworks:
+        patterns:
+          - tensorflow*
+          - torch*
+          - jax*
+          - keras*
+          - ml-dtypes
+          - numpy
+      django-stack:
+        patterns:
+          - Django
+          - django-*
+          - djangorestframework*
+          - djoser
+          - drf-*
+      dev-tooling:
+        patterns:
+          - pytest*
+          - black*
+          - flake8
+          - nbdime
+          - debugpy
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - ci
+
+  # Watches the FROM lines. Note that when BASE_IMAGE is digest-pinned in .env
+  # (see scripts/pin-base.sh) that pin wins over the Dockerfile default, so a
+  # Dependabot bump here still needs the digest re-resolved.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - docker

@@ -9,24 +9,59 @@
 # docker-compose.yml selects target=jupyter by default.
 
 # -----------------------------------------------------------------------------
-# Stage: uv-bin — pinned uv binary, replaces the unverified install.sh fetch.
-# Bump UV_VERSION to upgrade uv across every downstream stage.
+# Global build args.
+#
+# Every arg referenced by a `FROM` line, or shared by more than one stage, has
+# to be declared HERE — above the first FROM. An ARG declared after a FROM
+# belongs to that stage alone, so `FROM ${BASE_IMAGE}` would resolve against an
+# empty global scope and BuildKit hard-fails with
+# "base name (${BASE_IMAGE}) should not be blank".
+#
+# This block owns the DEFAULTS. A stage that needs one of these re-declares it
+# bare (`ARG USER_UID`, no `=`), which pulls the value down from here: ARG does
+# not cross a stage boundary on its own, only ENV does. Keep the defaults in
+# this block alone so there is exactly one place to change them.
+# Enforced by tests/dockerfile_test.sh.
+#
+# BASE_IMAGE defaults to the CUDA 12.4.1 runtime tag so a fresh clone builds
+# with no extra setup. That tag is MUTABLE: the same name can be re-pushed with
+# different contents, which silently defeats the pinning discipline applied to
+# every Python dependency. For a reproducible build, resolve the digest once
+# and pin it:
+#
+#   scripts/pin-base.sh                              # prints the digest line
+#   BASE_IMAGE=nvidia/cuda@sha256:<digest>           # paste into .env
+#
+# The `-runtime` variant (vs `-devel`) ships only the CUDA runtime libs, not
+# the toolchain (nvcc, headers) — saves ~2-3 GB, and TF wheels bundle their own
+# CUDA. Switch to `-devel` if a workload compiles CUDA kernels at runtime
+# (triton, cupy-from-source).
 # -----------------------------------------------------------------------------
+ARG BASE_IMAGE=nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 ARG UV_VERSION=0.5.11
-FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
-
-
-# -----------------------------------------------------------------------------
-# Stage: base — common to shell + jupyter targets.
-# -----------------------------------------------------------------------------
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base
-
 ARG REQUIREMENTS_FILE=requirements.txt
 ARG PYTHON_VERSION=3.12
 # Match these to your host user's `id -u` / `id -g` so files written into
 # MOUNT_PATH from inside the container are owned by your host user.
 ARG USER_UID=1000
 ARG USER_GID=1000
+
+
+# -----------------------------------------------------------------------------
+# Stage: uv-bin — pinned uv binary, replaces the unverified install.sh fetch.
+# Bump UV_VERSION to upgrade uv across every downstream stage.
+# -----------------------------------------------------------------------------
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
+
+
+# -----------------------------------------------------------------------------
+# Stage: base — common to shell + jupyter targets.
+# -----------------------------------------------------------------------------
+FROM ${BASE_IMAGE} AS base
+
+ARG PYTHON_VERSION
+ARG USER_UID
+ARG USER_GID
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -44,6 +79,10 @@ ENV PYTHONUNBUFFERED=1
 # - libmagic1           : python-magic (transitive via unstructured / langchain)
 # - ffmpeg              : yt-dlp, video / audio re-encoding
 # - curl, ca-certificates: HEALTHCHECK probe + general TLS trust store
+# - git                 : notebooks routinely run `!git clone` and
+#                         `!pip install git+https://...`, and nbdime (pinned in
+#                         requirements.txt) is a git notebook-diff driver that
+#                         is inert without it
 # - apt-get upgrade refreshes ~14 months of accumulated Ubuntu CVEs that
 #   the upstream CUDA base image hasn't been rebuilt to pick up.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -52,7 +91,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && apt-get update \
     && apt-get -y upgrade --no-install-recommends \
     && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates curl \
+        build-essential ca-certificates curl git \
         ffmpeg libgl1 libglib2.0-0 libmagic1 \
         libportaudio2 libsndfile1 \
         poppler-utils portaudio19-dev tesseract-ocr \
@@ -91,6 +130,13 @@ WORKDIR /home/workspace
 # -----------------------------------------------------------------------------
 FROM base AS shell
 
+# Bare re-declarations: values come from the global block. ARG does not cross a
+# stage boundary, so without these the COPY below expands to `--chown=:` with
+# no source and the build fails.
+ARG REQUIREMENTS_FILE
+ARG USER_UID
+ARG USER_GID
+
 COPY --chown=${USER_UID}:${USER_GID} ${REQUIREMENTS_FILE} /tmp/requirements.txt
 
 USER jovyan
@@ -105,12 +151,32 @@ RUN --mount=type=cache,target=/home/jovyan/.cache/uv,uid=${USER_UID},gid=${USER_
 # -----------------------------------------------------------------------------
 FROM base AS jupyter
 
+# Bare re-declarations: values come from the global block. ARG does not cross a
+# stage boundary, so without these the COPYs below expand to `--chown=:` with
+# no source and the build fails.
+ARG REQUIREMENTS_FILE
+ARG USER_UID
+ARG USER_GID
+
 # When set to "1" or "true", runs pip-audit --strict after deps install and
 # fails the build if any flagged CVE is present. Off by default so day-to-day
 # rebuilds don't block on an unpatched transitive; flip on in CI.
 ARG PIP_AUDIT_STRICT=0
 
-COPY --chown=${USER_UID}:${USER_GID} jupyter-base.txt /tmp/jupyter-base.txt
+# Both input files are resolved in a single uv pass, so a hash-checked build
+# needs hashes in BOTH of them. Pointing REQUIREMENTS_FILE at requirements.lock
+# is therefore not sufficient on its own — JUPYTER_BASE_FILE has to move to
+# jupyter-base.lock at the same time. Fully locked, hash-verified build:
+#
+#   scripts/lock.sh -a
+#   REQUIREMENTS_FILE=requirements.lock \
+#   JUPYTER_BASE_FILE=jupyter-base.lock \
+#   REQUIRE_HASHES=1 \
+#     docker compose -p locked up -d --build
+ARG JUPYTER_BASE_FILE=jupyter-base.txt
+ARG REQUIRE_HASHES=0
+
+COPY --chown=${USER_UID}:${USER_GID} ${JUPYTER_BASE_FILE} /tmp/jupyter-base.txt
 COPY --chown=${USER_UID}:${USER_GID} ${REQUIREMENTS_FILE} /tmp/requirements.txt
 
 USER jovyan
@@ -121,7 +187,12 @@ USER jovyan
 # spec into /opt/venv/share/jupyter/kernels/ml/ so it survives the
 # read_only:true rootfs + tmpfs mask of /home/jovyan/.local at runtime.
 RUN --mount=type=cache,target=/home/jovyan/.cache/uv,uid=${USER_UID},gid=${USER_GID} \
-    uv pip install -r /tmp/jupyter-base.txt -r /tmp/requirements.txt \
+    if [ "$REQUIRE_HASHES" = "1" ] || [ "$REQUIRE_HASHES" = "true" ]; then \
+        set -- --require-hashes; \
+    else \
+        set --; \
+    fi \
+    && uv pip install "$@" -r /tmp/jupyter-base.txt -r /tmp/requirements.txt \
     && python -m ipykernel install --sys-prefix --name=ml
 
 # Opt-in CVE gate. Skipped unless PIP_AUDIT_STRICT is "1" or "true". A

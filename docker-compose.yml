@@ -6,11 +6,25 @@ services:
       target: jupyter
       args:
         REQUIREMENTS_FILE: ${REQUIREMENTS_FILE:-requirements.txt}
+        # Both must move together for a hash-checked build: uv resolves them in
+        # one pass, so --require-hashes fails unless BOTH carry hashes.
+        #   scripts/lock.sh -a
+        #   REQUIREMENTS_FILE=requirements.lock JUPYTER_BASE_FILE=jupyter-base.lock \
+        #   REQUIRE_HASHES=1 docker compose -p locked up -d --build
+        JUPYTER_BASE_FILE: ${JUPYTER_BASE_FILE:-jupyter-base.txt}
+        REQUIRE_HASHES: ${REQUIRE_HASHES:-0}
         PYTHON_VERSION: ${PYTHON_VERSION:-3.12}
         USER_UID: ${USER_UID:-1000}
         USER_GID: ${USER_GID:-1000}
         UV_VERSION: ${UV_VERSION:-0.5.11}
         PIP_AUDIT_STRICT: ${PIP_AUDIT_STRICT:-0}
+        # Tag by default, so a fresh clone builds without extra setup. A tag is
+        # mutable — the same tag can be re-pushed under you, which quietly
+        # defeats the pinning discipline everywhere else. For reproducible
+        # builds pin the digest instead:
+        #   scripts/pin-base.sh          # resolves and prints the digest
+        #   BASE_IMAGE=nvidia/cuda@sha256:<digest>   # in .env
+        BASE_IMAGE: ${BASE_IMAGE:-nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04}
     ports:
       # 1:1 host↔container mapping so the URL JupyterLab prints in its log
       # matches the one the user actually opens. Both sides use HOST_PORT.
@@ -34,9 +48,25 @@ services:
       # can be wiped from the host with `rm -rf`. Set to the empty string to
       # disable in-notebook installs entirely.
       KEDULAB_USER_PREFIX: ${KEDULAB_USER_PREFIX-/home/workspace/.kedulab-packages}
+      # Writable cache/dataset root for the ML frameworks. Without it,
+      # nltk.download() / keras.datasets / tfds.load() hit the read-only rootfs
+      # and fail, while HuggingFace and torch.hub downloads land in RAM-backed
+      # tmpfs — counted against MEMORY_LIMIT and lost on every restart. The
+      # entrypoint derives HF_HOME, TORCH_HOME, NLTK_DATA, KERAS_HOME,
+      # TFDS_DATA_DIR, MPLCONFIGDIR and XDG_CACHE_HOME from this.
+      # Set to the empty string to leave every framework on its own default.
+      KEDULAB_CACHE_DIR: ${KEDULAB_CACHE_DIR-/home/workspace/.kedulab-cache}
+      # Restricts TensorFlow / PyTorch / JAX to specific GPUs by index, e.g.
+      # CUDA_VISIBLE_DEVICES=0 for one stack and =1 for another on the same
+      # host. Empty (the default) means "use everything the container can see".
+      CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES-}
     # Default /dev/shm of 64 MB is too small for PyTorch DataLoader workers
     # at scale; bump to a sensible default that user can override.
     shm_size: ${SHM_SIZE:-2gb}
+    # PID 1 would otherwise be jupyter-lab, which does not reap orphans. Killed
+    # kernels and notebook subprocesses then accumulate as zombies for the life
+    # of the container. `init: true` puts a minimal reaper in front.
+    init: true
     deploy:
       resources:
         limits:
@@ -45,7 +75,13 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              # `all` by default. On a multi-GPU host, two stacks started in
+              # parallel would each claim every GPU — set GPU_COUNT=1 (or any
+              # integer) per stack to divide the host between them. To choose
+              # *which* GPU a stack gets, keep GPU_COUNT=all and set
+              # CUDA_VISIBLE_DEVICES=<id> so the frameworks bind to just that
+              # device.
+              count: ${GPU_COUNT:-all}
               capabilities: [gpu]
     cap_drop:
       - ALL
@@ -56,12 +92,18 @@ services:
     # so a code-execution bug inside the container cannot drop a payload
     # onto the image rootfs.
     read_only: true
+    # Every tmpfs carries an explicit size cap. tmpfs is RAM: an uncapped mount
+    # defaults to half the host's memory, and those pages count against
+    # MEMORY_LIMIT above — so a single large download into a cache dir could
+    # OOM-kill the container instead of erroring. Framework caches are
+    # redirected to the workspace mount (KEDULAB_CACHE_DIR), so these only need
+    # to hold transient runtime state.
     tmpfs:
-      - /tmp
-      - /home/jovyan/.jupyter
-      - /home/jovyan/.local
-      - /home/jovyan/.cache
-      - /home/jovyan/.ipython
+      - /tmp:size=${TMPFS_TMP_SIZE:-2g}
+      - /home/jovyan/.jupyter:size=64m
+      - /home/jovyan/.local:size=256m
+      - /home/jovyan/.cache:size=${TMPFS_CACHE_SIZE:-1g}
+      - /home/jovyan/.ipython:size=64m
     restart: unless-stopped
     logging:
       driver: json-file

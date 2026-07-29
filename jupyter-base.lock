@@ -1,0 +1,11 @@
+# PLACEHOLDER — do not use.
+#
+# An automated attempt to reproduce this lockfile's content failed (hand
+# transcription silently dropped hash lines and truncated the file after
+# line 158 of 1096). It could not be safely deleted from this session either.
+#
+# Generate the real file yourself:
+#   scripts/lock.sh jupyter-base.txt
+#
+# That overwrites this placeholder with a correct, uv-generated,
+# hash-verified lock in one deterministic pass.

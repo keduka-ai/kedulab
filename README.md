@@ -60,15 +60,20 @@ Force the installer's choice with `KEDULAB_GPU=on` or `KEDULAB_GPU=off` (default
 curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash
 ```
 
-The installer is a thin bash bootstrap — it verifies your host can run the stack (Docker, Compose v2), probes for a GPU (falling back to CPU and pinning `docker-compose.cpu.yml` if none is found), clones the repo, walks you through the per-stack env vars (project name, requirements file, mount path, host port — press enter for defaults), writes `.env`, and prints the exact `docker compose` command to start the container. It does **not** auto-launch — you run the final command yourself.
+The installer is a thin bash bootstrap — it verifies your host can run the stack (Docker, Compose v2), probes for a GPU (falling back to CPU and pinning `docker-compose.cpu.yml` if none is found), clones the repo, walks you through the per-stack env vars (project name, requirements file, mount path, host port — press enter for defaults), writes `.env` (including `USER_UID`/`USER_GID` matched to your host, so the bind-mounted workspace is writable from inside the container), and prints the exact `docker compose` command to start the container. It does **not** auto-launch — you run the final command yourself.
 
-Read it first if you'd like:
+Read it first if you'd like — and consider verifying it before running, since `curl | bash` executes whatever is currently on the branch you point it at:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh | bash -s -- --help
+curl -fsSLO https://raw.githubusercontent.com/keduka-ai/kedulab/main/install.sh
+sha256sum install.sh        # compare against the value in the release notes
+less install.sh
+bash install.sh -- --help
 ```
 
-Flags: `--ref <tag>` (pin to a version), `--dir <path>` (custom clone target), `--yes` (accept all defaults), `--no-prereq-check` (CI mode). Env-var overrides: `KEDULAB_PROJECT`, `KEDULAB_REQUIREMENTS_FILE`, `KEDULAB_MOUNT_PATH`, `KEDULAB_HOST_PORT`.
+`--ref main` (the default) tracks a moving branch and the installer will warn you about it; pass `--ref <tag>` to pin an immutable release instead.
+
+Flags: `--ref <tag>` (pin to a version), `--dir <path>` (custom clone target), `--yes` (accept all defaults), `--no-prereq-check` (CI mode). Env-var overrides: `KEDULAB_PROJECT`, `KEDULAB_REQUIREMENTS_FILE`, `KEDULAB_MOUNT_PATH`, `KEDULAB_HOST_PORT`, `KEDULAB_USER_UID`/`KEDULAB_USER_GID` (override the auto-detected host UID/GID).
 
 ### Manual install
 
@@ -133,11 +138,19 @@ All knobs have defaults, all are overridable per-stack.
 | `MEMORY_LIMIT` | `16G` | Compose memory limit. |
 | `CPU_LIMIT` | `8` | Compose CPU limit. |
 | `SHM_SIZE` | `2gb` | `/dev/shm` size. Raise if PyTorch DataLoader workers crash with `worker is killed`. |
-| `USER_UID` / `USER_GID` | `1000` / `1000` | UID/GID of the non-root `jovyan` user. Match to your host `id -u` / `id -g` so bind-mount files are owned correctly. |
+| `USER_UID` / `USER_GID` | `1000` / `1000` | UID/GID of the non-root `jovyan` user. Match to your host `id -u` / `id -g` so bind-mount files are owned correctly — the installer does this automatically. |
 | `UV_VERSION` | `0.5.11` | Tag of `ghcr.io/astral-sh/uv` the build copies the uv binary from. Bump to upgrade uv. |
+| `BASE_IMAGE` | `nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04` | Build arg for the base image. It's a mutable tag by default; pin it to a digest for reproducible builds with `scripts/pin-base.sh --write`. See [Reproducible builds](#reproducible-builds). |
 | `JUPYTER_PASSWORD_HASH` | (empty) | When set, swaps auto-token auth for hashed-password auth at container start. **Required when `BIND_ADDR` is not `127.0.0.1`.** Generate: `python -c "from jupyter_server.auth import passwd; print(passwd())"`. |
 | `KEDULAB_USER_PREFIX` | `/home/workspace/.kedulab-packages` | Where libraries installed from inside a notebook (`!pip install <lib>`) are written. Lives on the mounted workspace so they survive a restart. Set to an empty string to disable in-notebook installs. See [Installing libraries from a notebook](#installing-libraries-from-a-notebook). |
+| `KEDULAB_CACHE_DIR` | `/home/workspace/.kedulab-cache` | Writable root for model/dataset caches (HuggingFace, torch.hub, NLTK, Keras, TFDS, matplotlib). Lives on the mounted workspace for the same reason as the pip overlay. Set to an empty string to disable. See [Model and dataset caches](#model-and-dataset-caches). |
+| `GPU_COUNT` | `all` | How many GPUs the device reservation claims. On a multi-GPU host, set to an integer (e.g. `1`) per stack so parallel stacks don't all grab every GPU. GPU compose file only. |
+| `CUDA_VISIBLE_DEVICES` | (empty) | Restricts TF/PyTorch/JAX to specific GPU indices, e.g. `0` or `1`. Use this to pick *which* GPU a stack gets; `GPU_COUNT` controls *how many*. |
+| `TMPFS_TMP_SIZE` | `2g` | Size cap on the in-memory `/tmp` mount. |
+| `TMPFS_CACHE_SIZE` | `1g` | Size cap on the in-memory `~/.cache` mount (framework caches are redirected off this via `KEDULAB_CACHE_DIR`, so it only needs to hold transient state). |
 | `PIP_AUDIT_STRICT` | `0` | Build arg — set to `1` in CI to run `pip-audit --strict` after the deps install. Off by default so local rebuilds aren't blocked on a single transitive CVE. |
+| `JUPYTER_BASE_FILE` | `jupyter-base.txt` | Build arg for the Jupyter plumbing file. Move it to `jupyter-base.lock` together with `REQUIREMENTS_FILE` for a hash-checked build. See [Reproducible builds](#reproducible-builds). |
+| `REQUIRE_HASHES` | `0` | Build arg — set to `1` to add `--require-hashes` to the deps install. Requires both `REQUIREMENTS_FILE` and `JUPYTER_BASE_FILE` to point at `.lock` files. |
 
 There are two ways to override them.
 
@@ -153,7 +166,7 @@ HOST_PORT=5679 \
 ### Env file (reusable per-project)
 
 ```bash
-cp env.example .env.nlp
+cp .env.example .env.nlp
 # edit .env.nlp to set REQUIREMENTS_FILE, MOUNT_PATH, HOST_PORT
 docker compose --env-file .env.nlp -p nlp up -d --build
 ```
@@ -206,7 +219,7 @@ docker ps                  # all running containers
 4. **Optionally create a `.env.<project>` file** so you don't have to remember the values:
 
    ```bash
-   cp env.example .env.<project>
+   cp .env.example .env.<project>
    # edit
    ```
 
@@ -251,6 +264,68 @@ The container's root filesystem is mounted read-only, so pip cannot write into t
 
 ---
 
+## Model and dataset caches
+
+The pip overlay solves *installing* a library from a notebook. A second, related problem is where that library then tries to *write data* — a HuggingFace checkpoint, an `nltk.download()` corpus, a `tfds.load()` dataset. Same root cause (`read_only: true`), different symptom:
+
+- **`nltk.download(...)`, `keras.datasets.*.load_data()`, `tfds.load(...)`** default to a `$HOME` path that is **not** tmpfs, so the first write hits the read-only rootfs and the call fails outright.
+- **HuggingFace (`transformers`/`datasets`) and `torch.hub`** default under `~/.cache`, which **is** tmpfs — i.e. RAM. The download "succeeds," but it counts against `MEMORY_LIMIT`, disappears on every restart, and a multi-GB checkpoint can OOM-kill the container instead of just erroring.
+
+The entrypoint redirects all of them onto the bind-mounted workspace via `KEDULAB_CACHE_DIR` (default `/home/workspace/.kedulab-cache`):
+
+| Redirected | Env var |
+| --- | --- |
+| HuggingFace (`transformers`, `datasets`, `huggingface_hub`) | `HF_HOME` |
+| `torch.hub` | `TORCH_HOME` |
+| `nltk.download()` | `NLTK_DATA` |
+| `keras.datasets`, `keras.applications` | `KERAS_HOME` |
+| `tfds.load()` | `TFDS_DATA_DIR` |
+| matplotlib font cache | `MPLCONFIGDIR` |
+| everything else following the XDG spec | `XDG_CACHE_HOME` |
+
+Nothing to do — it's on by default. A few things worth knowing:
+
+- **An explicit setting wins.** If you set `HF_HOME` yourself (e.g. to point at a shared, read-only dataset volume mounted elsewhere), the entrypoint leaves it alone.
+- **Downloads survive restarts and rebuilds**, because they live on the host side of the bind mount, same as the pip overlay.
+- **Reset with `rm -rf <MOUNT_PATH>/.kedulab-cache`** from the host if a cache gets corrupted or you just want the space back.
+- **Set `KEDULAB_CACHE_DIR=` (empty)** to opt out entirely and leave every framework on its stock default.
+
+---
+
+## Reproducible builds
+
+Every Python dependency here is pinned with `>=X.Y,<Z.0` ranges — good for staying patched, but it means two builds a month apart can still resolve different transitive versions, and the base image itself is referenced by a mutable tag. Two scripts close both gaps when you want a byte-for-byte reproducible build.
+
+**Pin the base image to a digest** (a tag can be re-pushed with different contents; a digest can't):
+
+```bash
+scripts/pin-base.sh --write          # resolves nvidia/cuda:12.4.1-... and writes BASE_IMAGE=...@sha256:... to .env
+docker compose up -d --build
+```
+
+To go back to floating on the tag, delete the `BASE_IMAGE` line from your env file.
+
+**Compile hash-verified lockfiles** for the Python side:
+
+```bash
+scripts/lock.sh -a                   # -> requirements.lock, requirements-*.lock, jupyter-base.lock
+```
+
+`jupyter-base.txt` and `${REQUIREMENTS_FILE}` are resolved together in a single `uv` invocation, so a hash-checked build needs **both** swapped to their `.lock` counterparts at once:
+
+```bash
+REQUIREMENTS_FILE=requirements.lock \
+JUPYTER_BASE_FILE=jupyter-base.lock \
+REQUIRE_HASHES=1 \
+  docker compose -p locked up -d --build
+```
+
+`REQUIRE_HASHES` defaults to `0`, so you can also point just `REQUIREMENTS_FILE` at a `.lock` file for pinned-but-unverified transitive versions without touching `JUPYTER_BASE_FILE`.
+
+`scripts/lock.sh` resolves for the *container's* Python version and platform (`--python-version 3.12`, `--python-platform x86_64-manylinux_2_35` — matching the CUDA base image's Ubuntu 22.04 / glibc 2.35), not the host you happen to run it on, so the lock is accurate even if your workstation runs a different OS or Python.
+
+---
+
 ## Working with a running stack
 
 ```bash
@@ -278,12 +353,7 @@ docker compose -p <project> up -d --build
 
 Compose will not rebuild on its own when only build args change — pass `--build` explicitly.
 
-For reproducible, hash-pinned installs, generate a lockfile on the host (requires uv installed locally) and point `REQUIREMENTS_FILE` at it:
-
-```bash
-scripts/lock.sh requirements.txt          # -> requirements.lock
-REQUIREMENTS_FILE=requirements.lock docker compose -p <project> up -d --build
-```
+For reproducible, hash-pinned installs, see [Reproducible builds](#reproducible-builds).
 
 ---
 
@@ -291,17 +361,26 @@ REQUIREMENTS_FILE=requirements.lock docker compose -p <project> up -d --build
 
 ```text
 .
-├── Dockerfile                       # Multi-stage: uv-bin, base, shell, jupyter targets.
-├── docker-compose.yml               # Single parameterized `jupyter` service.
-├── env.example                      # Template for per-project .env files.
-├── jupyter-base.txt                 # Pinned jupyterlab + ipykernel + pip. Always installed.
-├── requirements.txt                 # Default project ML deps. Copy & customize per project.
-├── requirements-distributed.txt     # Ray / Kubernetes / KFP add-on for distributed work.
-├── pyproject.toml                   # Scaffold mirror of requirements*.txt for host-side uv workflows.
-├── scripts/entrypoint.sh            # JupyterLab launcher — password auth + in-notebook install prefix.
-├── scripts/lock.sh                  # Generate uv-compiled lockfiles.
-├── tests/                           # Shell regression tests (no docker daemon required).
-└── README.md                        # This file.
+├── Dockerfile                       # Single Dockerfile: uv-bin, base, shell, jupyter targets.
+├── docker-compose.yml                # Parameterized `jupyter` service (GPU).
+├── docker-compose.cpu.yml            # Same service, no GPU device reservation.
+├── .env.example                      # Template for per-project .env files.
+├── jupyter-base.txt                  # Pinned jupyterlab + ipykernel + pip. Always installed.
+├── requirements.txt                  # Default project ML deps. Copy & customize per project.
+├── requirements-distributed.txt      # Ray / Kubernetes / KFP add-on for distributed work.
+├── requirements-kais.txt             # Example per-project requirements file.
+├── requirements*.lock                # Hash-verified lockfiles (scripts/lock.sh -a). See Reproducible builds.
+├── pyproject.toml                    # Scaffold mirror of requirements*.txt for host-side uv workflows.
+├── scripts/entrypoint.sh             # JupyterLab launcher — password auth, pip overlay, model/dataset caches.
+├── scripts/lock.sh                   # Generate uv-compiled, hash-verified lockfiles.
+├── scripts/pin-base.sh               # Resolve the base image tag to an immutable digest.
+├── tests/                            # Shell regression tests; run `bash tests/run_all.sh`.
+├── .github/workflows/ci.yml          # Test suite, shellcheck, hadolint, compose-lockstep — every push/PR.
+├── .github/workflows/security.yml    # Image build + CVE gate + Trivy scan — weekly and on dependency changes.
+├── .github/dependabot.yml            # Weekly pip/docker/actions update PRs.
+├── SECURITY.md                       # Vulnerability reporting, deployment/threat model.
+├── CONTRIBUTING.md                   # TDD workflow, lockstep rules, PR checklist.
+└── README.md                         # This file.
 ```
 
 `requirements-<project>.txt` files for individual projects live alongside `requirements.txt`. A pre-made `requirements-distributed.txt` ships with the repo for Ray / Kubernetes / KFP workloads — use it via `REQUIREMENTS_FILE=requirements-distributed.txt`.
@@ -347,7 +426,12 @@ Defaults are tuned for a single-user laptop. Important controls:
 - **`read_only: true` rootfs** with `tmpfs` for `/tmp`, `~/.jupyter`, `~/.local`, `~/.cache`, `~/.ipython`. The bind-mounted `/home/workspace` is the only persistent writable surface. A code-execution bug inside the container cannot persist a payload to the image rootfs.
 - **Memory / CPU limits** prevent runaway notebooks OOMing the host.
 - **uv is pinned** via `ghcr.io/astral-sh/uv:${UV_VERSION}` — no unverified `install.sh` fetch at build time.
-- **Opt-in `pip-audit` build gate** via `PIP_AUDIT_STRICT=1` — flip on in CI to fail builds on flagged CVEs.
+- **Opt-in `pip-audit` build gate** via `PIP_AUDIT_STRICT=1` — enabled automatically in the weekly `security.yml` CI run, off by default locally so an unpatched transitive doesn't block an iterative rebuild.
+- **Reproducible builds are available, not forced** — the base image floats on a tag and dependency ranges are ranges by default, so day-to-day builds stay fast. Pin both when you need byte-for-byte reproducibility; see [Reproducible builds](#reproducible-builds).
+- **`init: true`** puts a minimal PID-1 reaper in front of JupyterLab so killed kernels and notebook subprocesses don't accumulate as zombies for the life of the container.
+- **`git` is installed** (for `!git clone` / `pip install git+...` from a notebook, and because `nbdime` needs it) — a marginal increase in what's on the image, mitigated by the same `read_only`/`cap_drop` posture as the C compiler.
+
+Found a vulnerability? See [SECURITY.md](SECURITY.md) for private reporting instructions — please don't open a public issue.
 
 For shared hosts or any deployment with `BIND_ADDR != 127.0.0.1`:
 
@@ -380,6 +464,15 @@ Check that you're bringing the stack up with the same `MOUNT_PATH` — the overl
 
 **Something broke right after an in-notebook install**
 An install can shadow a pinned package (the overlay is searched before the image's venv). Reset it from the host: `rm -rf <MOUNT_PATH>/.kedulab-packages` then `docker compose -p <project> restart`.
+
+**`nltk.download(...)`, `tfds.load(...)`, or `keras.datasets.*.load_data()` fails with a read-only filesystem error**
+These default to a `$HOME` path that is not tmpfs, so they hit the read-only rootfs directly. The entrypoint redirects them onto the writable workspace via `KEDULAB_CACHE_DIR` (on by default) — see [Model and dataset caches](#model-and-dataset-caches). If it's still failing, check the container log for a `kedulab: could not prepare …` warning, which points at the same UID/GID mismatch as the pip-overlay failure above.
+
+**A HuggingFace model download is slow, disappears on restart, or the container gets OOM-killed**
+Without `KEDULAB_CACHE_DIR`, HuggingFace/`torch.hub` downloads land in `~/.cache`, which is a RAM-backed tmpfs — it counts against `MEMORY_LIMIT` and is wiped on every restart. This is on by default; if you've explicitly disabled it (`KEDULAB_CACHE_DIR=`) or set `HF_HOME` yourself, re-enable the redirect or point `HF_HOME` at a mounted directory instead.
+
+**Two stacks on the same GPU host are fighting over VRAM**
+Each stack's GPU reservation defaults to `count: all`, so two parallel stacks each claim every GPU on the box. Set `GPU_COUNT=1` per stack to divide a multi-GPU host between them, and `CUDA_VISIBLE_DEVICES=<index>` to pick which physical GPU each stack gets.
 
 **My new requirements aren't showing up**
 Compose doesn't rebuild when build args change unless you tell it to. Run with `--build`. If that still doesn't pick up the change, force a clean rebuild:

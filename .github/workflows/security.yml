@@ -1,0 +1,79 @@
+name: Security
+
+# The expensive half of CI: actually builds the image and audits the resolved
+# dependency set. This is what turns the CVE-aware pinning in requirements.txt
+# from a one-time review into something that keeps holding.
+#
+# Not run on every PR because the CUDA base plus TensorFlow + PyTorch + JAX is
+# well over 10 GB — it needs the disk-reclaim step below to fit on a free
+# runner, and takes tens of minutes on a cold cache.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC. A weekly cadence catches newly-disclosed CVEs in the
+    # existing pin set without waiting for someone to touch the repo.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+  pull_request:
+    # Only when the dependency surface or the build itself changes.
+    paths:
+      - 'Dockerfile'
+      - 'requirements*.txt'
+      - 'jupyter-base.txt'
+      - 'pyproject.toml'
+      - '.github/workflows/security.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-audit:
+    name: Build image + pip-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # A stock runner has ~14 GB free, which this image does not fit into.
+      # Dropping the preinstalled toolchains buys back ~25 GB.
+      - name: Reclaim disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo apt-get clean
+          df -h /
+
+      # PIP_AUDIT_STRICT=1 makes the build itself fail on any flagged CVE in the
+      # resolved set — that is the gate, not a separate scan step.
+      - name: Build with the CVE gate enabled
+        run: |
+          docker build \
+            --target jupyter \
+            --build-arg PIP_AUDIT_STRICT=1 \
+            -t kedulab-smoke:test \
+            .
+
+      - name: Image smoke test
+        env:
+          KEDULAB_SMOKE_BUILD: '0'
+          KEDULAB_SMOKE_IMAGE: kedulab-smoke:test
+        run: bash tests/image_smoke_test.sh
+
+  filesystem-scan:
+    name: Trivy config + secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Config scan catches container-hardening regressions (a dropped
+      # cap_drop, read_only flipped off, a root USER) that the unit tests would
+      # not notice; secret scan catches a credential committed by accident.
+      - name: Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: config,secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true

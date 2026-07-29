@@ -1,0 +1,52 @@
+name: Feature request
+description: Propose a new knob, dependency, or capability
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: |
+        The underlying task, not the proposed solution. What are you unable to
+        do today, and what workaround are you using?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like to see
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of change is this
+      options:
+        - A new dependency in the default image
+        - A new configuration knob (env var / build arg)
+        - A change to how the container runs
+        - Installer or docs
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependency
+    attributes:
+      label: If it's a dependency, which one
+      description: |
+        Package name and the version range you need. Note that the default
+        image deliberately holds several ceilings (TensorFlow, numpy, plotly,
+        Django, pandas) — if your package conflicts with one, a per-project
+        `requirements-<project>.txt` is usually the right answer rather than
+        moving the shared pin. See CLAUDE.md § Dependency edits.
+
+  - type: checkboxes
+    id: alternatives
+    attributes:
+      label: Have you tried
+      options:
+        - label: Installing it from a notebook with `%pip install` (see README § Installing libraries from a notebook)
+        - label: A per-project requirements file passed via `REQUIREMENTS_FILE`

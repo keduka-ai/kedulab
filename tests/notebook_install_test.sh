@@ -42,6 +42,11 @@ STUB
 chmod +x "$WORK/bin/python" "$WORK/bin/jupyter-lab"
 export PATH="$WORK/bin:$PATH"
 
+# This file covers the pip overlay only. Disable the cache-dir redirection so
+# its (correct) warning about an unwritable /home/workspace on the test host
+# doesn't leak into the assertions below; tests/cache_dirs_test.sh owns it.
+export KEDULAB_CACHE_DIR=""
+
 # ---- Case 1: pip exists in the image -------------------------------------
 grep -qE '^pip[><=]' "$ROOT/jupyter-base.txt" \
     || fail "jupyter-base.txt has no pip pin — '!pip install x' dies with 'pip: not found'.
