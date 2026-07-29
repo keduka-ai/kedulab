@@ -14,6 +14,6 @@
 
 ray[data,train,tune,serve]>=2.54,<3.0
 kubernetes>=31.0,<32.0
-kfp-pipeline-spec>=0.5,<1.0
+kfp-pipeline-spec>=0.5,<3.0
 kfp-server-api>=2.4,<3.0
 grpcio-health-checking>=1.68,<2.0
