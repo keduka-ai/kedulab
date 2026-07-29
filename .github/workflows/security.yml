@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # A stock runner has ~14 GB free, which this image does not fit into.
       # Dropping the preinstalled toolchains buys back ~25 GB.
@@ -64,7 +64,7 @@ jobs:
     name: Trivy config + secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Config scan catches container-hardening regressions (a dropped
       # cap_drop, read_only flipped off, a root USER) that the unit tests would
