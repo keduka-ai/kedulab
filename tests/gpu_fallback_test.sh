@@ -18,12 +18,15 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 # A local source repo to clone from (no network).
 git init -q --bare "$WORK/src.git"
 git clone -q "$WORK/src.git" "$WORK/seed" 2>/dev/null
-( cd "$WORK/seed"
+# The `cd` is guarded: without it a failure would leave the git commands below
+# running against this very checkout (`git add -A` + commit), not the seed.
+( cd "$WORK/seed" || exit 1
   echo "kedulab" > README.md
   git add -A
   git -c user.email=t@t -c user.name=t commit -q -m init
   git branch -M main
-  git push -q origin main ) 2>/dev/null
+  git push -q origin main ) 2>/dev/null \
+    || fail "could not seed the local source repo at $WORK/seed"
 
 # Mock docker: version / compose version succeed; the `run` GPU probe exits with
 # the status of $MOCK_GPU (0 = GPU present, non-zero = no GPU).

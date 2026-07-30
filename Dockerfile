@@ -57,6 +57,12 @@ FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
 # -----------------------------------------------------------------------------
 # Stage: base — common to shell + jupyter targets.
 # -----------------------------------------------------------------------------
+# DL3006 (always tag the image explicitly) is a false positive here: hadolint
+# cannot see through the variable, but the BASE_IMAGE default above is tagged
+# and `scripts/pin-base.sh --write` moves it to a digest. Kept inline rather
+# than in the workflow's ignore list so the rule still applies to every other
+# FROM in this file.
+# hadolint ignore=DL3006
 FROM ${BASE_IMAGE} AS base
 
 ARG PYTHON_VERSION

@@ -21,6 +21,17 @@ grep -qE '^ARG BASE_IMAGE=' "$DF" \
 grep -qE '^FROM \$\{BASE_IMAGE\}' "$DF" \
     || fail "the base stage does not build FROM \${BASE_IMAGE}"
 
+# ---- Case 2a: the DL3006 pragma survives -------------------------------------
+# hadolint cannot see through the variable and raises DL3006 ("always tag the
+# version of an image explicitly") on `FROM ${BASE_IMAGE}`, which CI runs with
+# --failure-threshold=warning. The ARG default IS tagged and the whole point of
+# the arg is that it can be moved to a digest, so the finding is a false
+# positive — but only an inline ignore keeps it scoped to this one line instead
+# of blinding the rule across the file.
+base_from_line="$(grep -nE '^FROM \$\{BASE_IMAGE\}' "$DF" | head -1 | cut -d: -f1)"
+sed -n "$((base_from_line - 1))p" "$DF" | grep -qE '^#\s*hadolint ignore=.*DL3006' \
+    || fail "no '# hadolint ignore=DL3006' directly above 'FROM \${BASE_IMAGE}' (line $base_from_line) — the CI lint job fails on it"
+
 # ---- Case 2b: build-arg references are in scope where they are used ------
 # ARG scoping is the one Dockerfile rule that grep-level presence checks miss
 # entirely, and neither hadolint nor `docker compose config` catches it:

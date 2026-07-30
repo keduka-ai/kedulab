@@ -21,14 +21,17 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 # Local source repo (no network).
 git init -q --bare "$WORK/src.git"
 git clone -q "$WORK/src.git" "$WORK/seed" 2>/dev/null
-( cd "$WORK/seed"
+# The `cd` is guarded: without it a failure would leave the git commands below
+# running against this very checkout (`git add -A` + commit), not the seed.
+( cd "$WORK/seed" || exit 1
   echo "kedulab" > README.md
   git add -A
   git -c user.email=t@t -c user.name=t commit -q -m init
   git branch -M main
   git tag v0.0.0-test
   git push -q origin main
-  git push -q origin v0.0.0-test ) 2>/dev/null
+  git push -q origin v0.0.0-test ) 2>/dev/null \
+    || fail "could not seed the local source repo at $WORK/seed"
 
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/docker" <<'MOCK'
