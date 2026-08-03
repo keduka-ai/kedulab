@@ -24,21 +24,21 @@ dependencies = [
     "azure-mgmt-storage>=21.2,<22.0",
     "boto3>=1.42,<2.0",
     # Deep Learning core (TF 2.18 pin is a user-intent narrowing)
-    "tensorflow>=2.18,<2.19",
+    "tensorflow>=2.18,<2.22",
     "tensorflow-datasets>=4.9,<5.0",
     # PyTorch GPU + JAX GPU. torch 2.5–2.6.x bundles CUDA 12.4 wheels (matches
     # the cuda:12.4.1-cudnn-runtime base); torch 2.7+ moved to CUDA 12.8.
     # jax held on 0.4.x because 0.5+ needs ml_dtypes>=0.5 (conflicts with TF
     # 2.18's <0.5 ceiling). Co-install is fragile — see requirements.txt
     # comments for the rationale.
-    "torch>=2.5,<2.7",
-    "jax[cuda12]>=0.4.38,<0.5",
+    "torch>=2.5,<2.14",
+    "jax[cuda12]>=0.4.38,<0.12",
     "keras>=3.7,<4.0",
-    "ml-dtypes>=0.4,<0.5",
+    "ml-dtypes>=0.4,<0.6",
     "transformers>=5.0,<6.0",  # CVE-2026-1839
     "datasets>=3.1,<4.0",
     # Numeric / Scientific (numpy <2.1 + ml-dtypes <0.5 are the TF 2.18.1 ceilings)
-    "numpy>=1.26,<2.1",
+    "numpy>=1.26,<2.6",
     "pandas>=2.2,<3.0",
     "scipy>=1.14,<2.0",
     "scikit-learn>=1.6,<2.0",
@@ -231,7 +231,7 @@ kais = [
     "safety>=3.7,<4.0",
     "stripe>=15.0,<16.0",
     "torch>=2.11,<3.0",
-    "torchvision>=0.26,<0.27",
+    "torchvision>=0.26,<0.29",
     "tqdm>=4.67,<5.0",
     "transformers>=5.5,<6.0",
     "twisted[http2,tls]>=25.5,<26.0",
